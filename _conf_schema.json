@@ -1,0 +1,126 @@
+{
+  "default_matching_mode": {
+    "description": "默认查询模式",
+    "type": "string",
+    "options": [
+      "排位",
+      "匹配",
+      "钴协议",
+      "联盟",
+      "孤狼",
+      "全部"
+    ],
+    "default": "排位",
+    "hint": "查询玩家时未指定模式所使用的默认值。"
+  },
+  "default_rank_tier": {
+    "description": "角色数据的段位范围",
+    "type": "string",
+    "options": [
+      "永恒",
+      "无瑕",
+      "星陨",
+      "灭钻",
+      "修罗",
+      "黄金",
+      "白银"
+    ],
+    "default": "灭钻",
+    "hint": "用于「角色数据」「查询角色」的统计口径，对应 DAK.GG 的高分段筛选。"
+  },
+  "render_mode": {
+    "description": "回复形式",
+    "type": "string",
+    "options": [
+      "卡片",
+      "文本",
+      "图片",
+      "自动"
+    ],
+    "default": "卡片",
+    "hint": "卡片：DAK.GG 网页风格的数据卡片，含角色立绘、武器/装备图标与表格；文本：纯文字；图片：Markdown 文转图；自动：卡片失败时依次回退。"
+  },
+  "recent_matches": {
+    "description": "最近对局显示条数",
+    "type": "int",
+    "default": 6,
+    "slider": {
+      "min": 0,
+      "max": 10,
+      "step": 1
+    }
+  },
+  "character_rows": {
+    "description": "角色数据显示行数",
+    "type": "int",
+    "default": 30,
+    "slider": {
+      "min": 10,
+      "max": 120,
+      "step": 10
+    },
+    "hint": "「角色数据」默认只显示评级最高的若干行，避免消息过长。"
+  },
+  "cooldown_seconds": {
+    "description": "同一会话查询冷却（秒）",
+    "type": "int",
+    "default": 3,
+    "slider": {
+      "min": 0,
+      "max": 30,
+      "step": 1
+    },
+    "hint": "防止刷屏与触发 DAK.GG 限流，0 表示不限制。"
+  },
+  "request_timeout": {
+    "description": "网络请求超时（秒）",
+    "type": "int",
+    "default": 20,
+    "slider": {
+      "min": 5,
+      "max": 60,
+      "step": 1
+    }
+  },
+  "cache_ttl": {
+    "description": "玩家数据缓存时间（秒）",
+    "type": "int",
+    "default": 300,
+    "slider": {
+      "min": 0,
+      "max": 3600,
+      "step": 30
+    },
+    "hint": "玩家战绩的缓存时间；角色/装备等静态数据始终缓存 6 小时。"
+  },
+  "auto_sync": {
+    "description": "自动同步最新战绩",
+    "type": "bool",
+    "default": true,
+    "hint": "查询时在后台请求 DAK.GG 与官方服务器同步玩家数据，不影响本次回复速度。"
+  },
+  "proxy": {
+    "description": "网络代理",
+    "type": "string",
+    "default": "",
+    "hint": "访问 DAK.GG 较慢时可填写代理地址，例如 http://127.0.0.1:7890，留空则不使用代理。"
+  },
+  "api_base": {
+    "description": "DAK.GG API 地址",
+    "type": "string",
+    "default": "https://er.dakgg.io/api",
+    "hint": "一般无需修改；若使用镜像服务可在此替换。"
+  },
+  "enable_binding": {
+    "description": "启用昵称绑定",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后可使用 /绑定、/解绑、/我的绑定，查询时省略昵称将使用已绑定昵称。"
+  },
+  "show_rating": {
+    "description": "显示表现评分",
+    "type": "bool",
+    "default": true,
+    "hint": "依据近期表现给出 S/A/B/C 评分与一句评价。"
+  }
+}
