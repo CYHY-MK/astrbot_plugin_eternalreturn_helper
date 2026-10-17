@@ -164,12 +164,3 @@ astrbot_plugin_eternalreturn_helper/
     ├── cards.py         # DAK.GG 网页风格卡片渲染
     └── docs/            # README 预览图
 ```
-
-## 发布到 AstrBot 插件市场
-
-- 仓库：<https://github.com/CYHY-MK/astrbot_plugin_eternalreturn_helper>
-- 插件 ID：`CYHY-MK/astrbot_plugin_eternalreturn_helper`
-- 版本：`2.0.0`
-- 压缩包约 0.75MB，满足市场 ≤16MB 限制。
-
-发布流程：登录 [AstrBot Cloud 发布页](https://cloud.astrbot.app/publish)，使用 GitHub 仓库地址提交；平台会校验 `metadata.yaml` 中的 `author`、`name`、`version` 与仓库内容一致。
