@@ -48,6 +48,8 @@ def format_player_text(report: PlayerReport) -> str:
             sub += f" · 第{report.rank_global}名"
         elif report.rank_local:
             sub += f" · 本服第{report.rank_local}名"
+    if report.season_note:
+        sub += f" · {report.season_note}"
     lines.append(sub)
     lines.append(DIVIDER)
 
@@ -56,17 +58,22 @@ def format_player_text(report: PlayerReport) -> str:
         f"场次 {fmt_int(stats['play'])}  胜率 {percent(stats['win_rate'])}  "
         f"TOP3 {percent(stats['top3_rate'])}"
     )
+    avg_rank = f"#{stats['avg_rank']:.2f}" if stats.get("play") else "-"
     lines.append(
-        f"平均排名 #{stats['avg_rank']:.2f}  平均击杀 {stats['avg_kills']:.2f}  "
+        f"平均排名 {avg_rank}  平均击杀 {stats['avg_kills']:.2f}  "
         f"平均助攻 {stats['avg_assists']:.2f}"
     )
     lines.append(f"平均TK {stats['avg_team_kills']:.2f}  平均伤害 {fmt_int(stats['avg_damage'])}")
     if report.rating:
         score_text = f" {report.rating.score:.2f}x" if report.rating.score is not None else ""
         lines.append(f"表现评分 {report.rating.grade}{score_text} · {report.rating.message}")
+    elif report.rating_note:
+        lines.append(f"表现评分：{report.rating_note}")
     lines.append(DIVIDER)
 
-    if report.matches:
+    if report.recent_hidden:
+        lines.append("最近对局展示已关闭。")
+    elif report.matches:
         lines.append(f"最近对局（{len(report.matches)} 场）")
         for match in report.matches:
             lines.append(_match_line(match))
@@ -118,21 +125,28 @@ def format_player_markdown(report: PlayerReport) -> str:
         "# 永恒轮回 · 玩家战绩",
         f"**{report.nickname}** · Lv.{report.level} · {_season(report.season_name)} · {report.mode_name}",
     ]
+    if report.season_note:
+        lines.append(f"> {report.season_note}")
     if report.mode_id == 3:
         rank = f" · 第{report.rank_global}名" if report.rank_global else ""
         lines.append(f"### {report.tier} · {fmt_int(report.mmr)} MMR{rank}")
     stats = report.stats
+    avg_rank = f"#{stats['avg_rank']:.2f}" if stats.get("play") else "-"
     lines += [
         "",
         f"- 场次 **{fmt_int(stats['play'])}** · 胜率 **{percent(stats['win_rate'])}** · TOP3 **{percent(stats['top3_rate'])}**",
-        f"- 平均排名 **#{stats['avg_rank']:.2f}** · 平均击杀 **{stats['avg_kills']:.2f}** · 平均助攻 **{stats['avg_assists']:.2f}**",
+        f"- 平均排名 **{avg_rank}** · 平均击杀 **{stats['avg_kills']:.2f}** · 平均助攻 **{stats['avg_assists']:.2f}**",
         f"- 平均 TK **{stats['avg_team_kills']:.2f}** · 平均伤害 **{fmt_int(stats['avg_damage'])}**",
     ]
     if report.rating:
         score = f"（{report.rating.score:.2f}x）" if report.rating.score is not None else ""
         lines.append(f"- 表现评分 **{report.rating.grade}**{score} · {report.rating.message}")
+    elif report.rating_note:
+        lines.append(f"- 表现评分：{report.rating_note}")
 
-    if report.matches:
+    if report.recent_hidden:
+        lines += ["", "> 最近对局展示已关闭。"]
+    elif report.matches:
         lines += [
             "",
             "## 最近对局",
@@ -489,7 +503,7 @@ def help_text(prefix: str, *, version: str = "2.0.0") -> str:
             f"  {p}永恒多少分 [服务器]  （分数线）",
             f"  {p}查询装备 <名称/拼音/ID>  （别名：装备查询 / 查装备）",
             "",
-            "模式：排位 / 匹配 / 钴协议 / 联盟 / 孤狼 / 全部，默认排位",
+            "模式：排位 / 匹配 / 钴协议 / 全部，默认排位",
             "服务器：亚1 / 亚2 / 亚3 / 美1 / 欧1 / 南1",
             "",
             f"示例：{p}查询玩家 RIOORI 排位",

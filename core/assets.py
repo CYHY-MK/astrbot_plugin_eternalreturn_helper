@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import tempfile
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 import aiohttp
@@ -32,10 +33,13 @@ class AssetCache:
         self.cache_dir = Path(cache_dir or (Path(tempfile.gettempdir()) / "astrbot_er_lomu_assets"))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._session: aiohttp.ClientSession | None = None
-        self._mem: dict[str, bytes] = {}
+        self._mem: OrderedDict[str, bytes] = OrderedDict()
         self._semaphore = asyncio.Semaphore(8)
+        self._closed = False
 
     async def start(self) -> None:
+        self._closed = False
+        await asyncio.to_thread(self._cleanup_disk)
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
@@ -43,9 +47,25 @@ class AssetCache:
             )
 
     async def close(self) -> None:
+        self._closed = True
         if self._session and not self._session.closed:
             await self._session.close()
         self._session = None
+
+    def _cleanup_disk(self) -> None:
+        now = time.time()
+        for path in self.cache_dir.glob("*"):
+            try:
+                if path.is_file() and now - path.stat().st_mtime > CACHE_TTL:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                continue
+
+    def _remember(self, url: str, data: bytes) -> None:
+        self._mem[url] = data
+        self._mem.move_to_end(url)
+        while len(self._mem) > 300:
+            self._mem.popitem(last=False)
 
     def _path_for(self, url: str) -> Path:
         suffix = Path(url.split("?", 1)[0]).suffix.lower()
@@ -55,7 +75,7 @@ class AssetCache:
         return self.cache_dir / f"{digest}{suffix}"
 
     async def get(self, url: str | None) -> bytes | None:
-        if not url:
+        if self._closed or not url:
             return None
         url = url.strip()
         if not url:
@@ -63,6 +83,7 @@ class AssetCache:
         if url.startswith("//"):
             url = "https:" + url
         if url in self._mem:
+            self._mem.move_to_end(url)
             return self._mem[url]
 
         path = self._path_for(url)
@@ -70,7 +91,7 @@ class AssetCache:
             try:
                 if time.time() - path.stat().st_mtime < CACHE_TTL:
                     data = path.read_bytes()
-                    self._mem[url] = data
+                    self._remember(url, data)
                     return data
             except OSError:
                 pass
@@ -93,7 +114,7 @@ class AssetCache:
             path.write_bytes(data)
         except OSError:
             pass
-        self._mem[url] = data
+        self._remember(url, data)
         return data
 
     async def get_many(self, urls: list[str | None]) -> dict[str, bytes]:

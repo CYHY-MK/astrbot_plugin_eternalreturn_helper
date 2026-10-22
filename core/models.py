@@ -13,15 +13,12 @@ MATCHING_MODES: dict[str, int] = {
     "normal": 2,
     "钴协议": 6,
     "cobalt": 6,
-    "联盟": 8,
-    "union": 8,
-    "孤狼": 9,
-    "lonely": 9,
-    "lonewolf": 9,
-    "lone_wolf": 9,
     "全部": 0,
     "all": 0,
 }
+
+# 查询接口实际支持的模式（联盟/孤狼经实测上游未做过滤，暂不提供）
+QUERYABLE_MODES = {0, 2, 3, 6}
 
 MATCHING_MODE_NAMES: dict[int, str] = {
     0: "全部",
@@ -39,8 +36,6 @@ MATCHING_MODE_QUERY: dict[int, str] = {
     2: "NORMAL",
     3: "RANK",
     6: "COBALT",
-    8: "UNION",
-    9: "LONE_WOLF",
 }
 
 TEAM_MODE_NAMES: dict[int, str] = {
@@ -60,6 +55,7 @@ RANK_TIER_QUERY: dict[str, str] = {
     "灭钻": "diamond_plus",
     "修罗": "platinum_plus",
     "黄金": "gold",
+    "白银": "silver",
     "白银及以下": "silver",
 }
 
@@ -81,6 +77,12 @@ GRADE_ORDER = {"S": 0, "A": 1, "B": 2, "C": 3, "D": 4, "F": 5}
 
 
 def parse_matching_mode(value: str | None, default: int = 3) -> int:
+    mode = parse_matching_mode_strict(value, default)
+    return default if mode is None else mode
+
+
+def parse_matching_mode_strict(value: str | None, default: int = 3) -> int | None:
+    """解析用户输入的模式；无法识别时返回 None（而不是静默回落到默认值）。"""
     if value is None:
         return default
     text = str(value).strip().lower()
@@ -92,7 +94,7 @@ def parse_matching_mode(value: str | None, default: int = 3) -> int:
         mode = int(text)
         if mode in MATCHING_MODE_QUERY:
             return mode
-    return default
+    return None
 
 
 def parse_rank_tier(value: str | None, default: str = "diamond_plus") -> str:
@@ -102,36 +104,23 @@ def parse_rank_tier(value: str | None, default: str = "diamond_plus") -> str:
     return RANK_TIER_QUERY.get(text, default)
 
 
-def pick_overview(profile: dict, matching_mode: int, team_mode: int = 0) -> dict | None:
-    """从 profile.playerSeasonOverviews 中挑选最合适的对局概览。"""
-    overviews = profile.get("playerSeasonOverviews") or []
-    if not overviews:
-        return None
-    seasons = [s.get("seasonId") for s in (profile.get("playerSeasons") or [])]
-    season_id = seasons[0] if seasons else None
-
-    def score(item: dict) -> tuple:
-        same_season = 1 if season_id is None or item.get("seasonId") == season_id else 0
-        return (
-            same_season,
-            1 if item.get("matchingModeId") == matching_mode else 0,
-            1 if item.get("teamModeId") == team_mode else 0,
-        )
-
-    exact = [
+def pick_overview(
+    profile: dict, season_id: int | None, matching_mode: int, team_mode: int = 0
+) -> dict | None:
+    """只返回同一赛季、同一模式的概览；找不到就是没数据，不再回落到全部模式。"""
+    candidates = [
         item
-        for item in overviews
-        if item.get("matchingModeId") == matching_mode and item.get("teamModeId") == team_mode
+        for item in (profile.get("playerSeasonOverviews") or [])
+        if (season_id is None or as_int(item.get("seasonId")) == as_int(season_id))
+        and as_int(item.get("matchingModeId")) == matching_mode
     ]
-    if exact:
-        return max(exact, key=score)
-    same_mode = [i for i in overviews if i.get("matchingModeId") == matching_mode]
-    if same_mode:
-        return max(same_mode, key=score)
-    all_mode = [i for i in overviews if i.get("matchingModeId") == 0]
-    if all_mode:
-        return max(all_mode, key=score)
-    return max(overviews, key=score)
+    if not candidates:
+        return None
+    for item in candidates:
+        if as_int(item.get("teamModeId")) == team_mode:
+            return item
+    # 同一模式内优先团队口径为“全部”的概览，否则取第一条，标签仍显示所选模式
+    return min(candidates, key=lambda item: as_int(item.get("teamModeId")))
 
 
 def latest_season_id(profile: dict) -> int | None:

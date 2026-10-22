@@ -33,10 +33,10 @@ from .core.formatters import (
     format_tier_text,
     help_text,
 )
-from .core.models import RANK_TIER_QUERY, parse_matching_mode
+from .core.models import RANK_TIER_QUERY, parse_matching_mode_strict
 from .core.queries import EternalReturnService
 
-PLUGIN_VERSION = "2.0.0"
+PLUGIN_VERSION = "2.0.1"
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
@@ -145,9 +145,30 @@ class EternalReturnHelperPlugin(Star):
             self.renderer = CardRenderer(self.assets)
         return self.renderer
 
-    @staticmethod
-    def _prefix() -> str:
+    def _prefix(self, event: AstrMessageEvent | None = None) -> str:
+        try:
+            config = self._get_context_config()
+            if hasattr(config, "get"):
+                wake = config.get("wake_prefix")
+                if isinstance(wake, str) and wake.strip():
+                    return wake.strip()
+                if isinstance(wake, list) and wake:
+                    return str(wake[0]).strip() or "/"
+        except Exception:  # noqa: BLE001 - 仅影响帮助文案
+            pass
         return "/"
+
+    @staticmethod
+    def _mode_error(mode: str, allowed: set[int]) -> str | None:
+        if not mode:
+            return None
+        value = parse_matching_mode_strict(mode)
+        if value is None or value not in allowed:
+            names = " / ".join(
+                {0: "全部", 2: "匹配", 3: "排位", 6: "钴协议"}[item] for item in sorted(allowed)
+            )
+            return f"不支持的模式「{mode}」，可选：{names}。"
+        return None
 
     @staticmethod
     def _command_argument(event: AstrMessageEvent) -> str:
@@ -162,17 +183,18 @@ class EternalReturnHelperPlugin(Star):
         seconds = int(self._cfg("cooldown_seconds", 3) or 0)
         if seconds <= 0:
             return 0
-        key = f"{event.get_platform_id()}:{event.get_session_id()}"
+        key = f"{event.get_platform_id()}:{event.get_sender_id()}"
         now = time.monotonic()
         last = self._last_query.get(key)
+        if last is not None:
+            left = seconds - (now - last)
+            if left > 0:
+                return max(1, math.ceil(left))
         self._last_query[key] = now
         if len(self._last_query) > 2000:
             cutoff = now - seconds
             self._last_query = {k: v for k, v in self._last_query.items() if v >= cutoff}
-        if last is None:
-            return 0
-        left = seconds - (now - last)
-        return max(0, math.ceil(left))
+        return 0
 
     async def _send(
         self,
@@ -328,6 +350,11 @@ class EternalReturnHelperPlugin(Star):
                 f"[{hide_nickname(nickname)}] 该名称不合法，EternalReturn 不允许使用这样的名称。"
             )
             return
+        mode = _normalize_text(mode)
+        mode_error = self._mode_error(mode, {0, 2, 3, 6})
+        if mode_error:
+            yield event.plain_result(mode_error)
+            return
 
         left = self._cooldown_left(event)
         if left:
@@ -370,6 +397,11 @@ class EternalReturnHelperPlugin(Star):
                 "请指定角色名，例如：/查询角色 杰琪\n可先使用 /角色数据 查看当前版本角色评级。"
             )
             return
+        mode = _normalize_text(mode)
+        mode_error = self._mode_error(mode, {2, 3, 6})
+        if mode_error:
+            yield event.plain_result(mode_error)
+            return
 
         left = self._cooldown_left(event)
         if left:
@@ -410,7 +442,7 @@ class EternalReturnHelperPlugin(Star):
         tier = _normalize_text(tier)
         if mode in RANK_TIER_QUERY and not tier:
             tier, mode = mode, ""
-        if mode and parse_matching_mode(mode, 3) != 3:
+        if mode and (parse_matching_mode_strict(mode) != 3):
             yield event.plain_result(
                 "DAK.GG 目前只提供排位模式的角色数据，请去掉模式参数或使用「排位」。"
             )
@@ -430,7 +462,7 @@ class EternalReturnHelperPlugin(Star):
             event,
             format_character_stats_text(report, limit),
             format_character_stats_markdown(report, max(limit, 30)),
-            lambda: self.renderer.character_stats(report, max(limit, 40)),
+            lambda: self.renderer.character_stats(report, limit),
         ):
             yield result
 
@@ -497,6 +529,9 @@ class EternalReturnHelperPlugin(Star):
                 logger.exception("查询装备失败")
             yield event.plain_result(self._error_text(exc))
             return
+        if result.item is None:
+            yield event.plain_result(format_item_text(result))
+            return
 
         async for item_result in self._send(
             event,
@@ -513,4 +548,4 @@ class EternalReturnHelperPlugin(Star):
     )
     async def show_help(self, event: AstrMessageEvent):
         """查看永恒轮回插件的全部指令。"""
-        yield event.plain_result(help_text(self._prefix(), version=PLUGIN_VERSION))
+        yield event.plain_result(help_text(self._prefix(event), version=PLUGIN_VERSION))

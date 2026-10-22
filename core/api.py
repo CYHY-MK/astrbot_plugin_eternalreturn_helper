@@ -49,6 +49,10 @@ class UpstreamError(DakGGError):
     """上游返回异常数据。"""
 
 
+class ClientClosed(DakGGError):
+    """客户端已关闭，拒绝重新创建连接。"""
+
+
 class DakGGClient:
     """轻量的 DAK.GG 客户端。"""
 
@@ -87,8 +91,11 @@ class DakGGClient:
             await self._session.close()
         self._session = None
         self._cache.clear()
+        self._locks.clear()
 
     async def _get_session(self) -> aiohttp.ClientSession:
+        if self._closed:
+            raise ClientClosed("客户端已关闭，请重新加载插件。")
         if self._session is None or self._session.closed:
             await self.start()
         assert self._session is not None

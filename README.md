@@ -19,7 +19,7 @@
 
 别名：`查玩家` / `永恒查询`、`查角色`、`角色排行`、`段位分布`、`分数线`、`装备查询` / `查装备`、`er帮助` / `erhelp`。
 
-模式支持：`排位`（默认）、`匹配`、`钴协议`、`联盟`、`孤狼`、`全部`（`/角色数据` 与角色详情仅支持 DAK.GG 提供统计的排位 / 匹配 / 钴协议口径）。
+模式支持：`排位`（默认）、`匹配`、`钴协议`、`全部`。`/角色数据` 与角色详情仅支持 DAK.GG 提供统计的排位 / 匹配 / 钴协议口径；联盟、孤狼因上游未做过滤，暂不提供。
 服务器支持：`亚1`（默认）/ `亚2` / `亚3` / `美1` / `欧1` / `南1`；段位分布为全服统计，服务器仅影响分数线。
 
 ## 效果示例
@@ -78,7 +78,7 @@ AstrBot/data/plugins/astrbot_plugin_eternalreturn_helper
 | `default_rank_tier` | 灭钻 | 「角色数据」「查询角色」使用的段位口径 |
 | `render_mode` | 卡片 | `卡片` / `文本` / `图片` / `自动`；卡片使用角色立绘、武器与装备图标排版，失败时自动回退 |
 | `recent_matches` | 6 | 最近对局显示条数（0~10） |
-| `character_rows` | 30 | 角色数据文字版显示行数 |
+| `character_rows` | 30 | 角色数据在文字与卡片中显示的行数 |
 | `cooldown_seconds` | 3 | 同一会话查询冷却，防止刷屏与触发上游限流 |
 | `request_timeout` | 20 | 单次请求超时（秒） |
 | `cache_ttl` | 300 | 玩家数据缓存时间（秒）；角色/装备等静态数据缓存 6 小时 |
@@ -122,7 +122,7 @@ DAK.GG 在部分网络环境下访问较慢，可在插件配置中填写 `proxy
 插件已对静态数据做 6 小时缓存、玩家数据做 5 分钟缓存，并带请求重试。仍被限流时请调大 `cooldown_seconds`。
 
 **角色数据太长**
-文字版默认只显示前 30 行，可调小 `character_rows`；卡片模式会渲染约 40 行，可调大 `character_rows` 查看更多。
+文字版与卡片都使用 `character_rows`，默认显示前 30 行；调大即可查看更多。
 
 **图片没有发出来**
 卡片由 Pillow 本地绘制，图片素材从 DAK.GG CDN 下载；失败时会自动回退文转图或文本，并在日志中记录原因。
@@ -154,6 +154,7 @@ astrbot_plugin_eternalreturn_helper/
 ├── _conf_schema.json    # WebUI 配置 Schema
 ├── logo.png
 ├── requirements.txt
+├── docs/                # README 预览图
 └── core/
     ├── api.py           # DAK.GG 异步客户端（缓存 / 重试 / 代理）
     ├── models.py        # 模式、段位、格式化工具
@@ -161,6 +162,5 @@ astrbot_plugin_eternalreturn_helper/
     ├── rating.py        # 表现评分算法
     ├── formatters.py    # 文本 / Markdown 渲染
     ├── assets.py        # DAK.GG 图片下载与缓存
-    ├── cards.py         # DAK.GG 网页风格卡片渲染
-    └── docs/            # README 预览图
+    └── cards.py         # DAK.GG 网页风格卡片渲染
 ```

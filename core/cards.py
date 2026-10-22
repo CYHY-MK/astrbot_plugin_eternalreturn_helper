@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import math
 import os
 import tempfile
+import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -96,6 +99,11 @@ _FONT_KO_BOLD = next(
     _FONT_KO,
 )
 _FONT_CACHE: dict[tuple[int, bool], ImageFont.FreeTypeFont] = {}
+_SAVE_LOCK = threading.Lock()
+if _FONT_BOLD is None or _FONT_REGULAR is None:
+    logging.getLogger("astrbot").warning(
+        "未找到可用的中文字体，卡片中文可能显示为方框；建议安装 Noto Sans CJK 或微软雅黑。"
+    )
 _KO_CACHE: dict[tuple[int, bool], ImageFont.FreeTypeFont] = {}
 
 
@@ -170,6 +178,31 @@ def text(
         x += width
 
 
+def measure_text(draw: ImageDraw.ImageDraw, value: str, size: int, bold: bool = False) -> float:
+    value = str(value)
+    if not any(_is_hangul(ch) for ch in value):
+        return float(draw.textlength(value, font=font(size, bold)))
+    total = 0.0
+    run = ""
+    run_is_hangul = None
+    for char in value:
+        hangul = _is_hangul(char)
+        if run_is_hangul is None or hangul == run_is_hangul:
+            run += char
+            run_is_hangul = hangul
+        else:
+            total += draw.textlength(
+                run, font=ko_font(size, bold) if run_is_hangul else font(size, bold)
+            )
+            run = char
+            run_is_hangul = hangul
+    if run:
+        total += draw.textlength(
+            run, font=ko_font(size, bold) if run_is_hangul else font(size, bold)
+        )
+    return float(total)
+
+
 def fit_text(
     draw: ImageDraw.ImageDraw,
     value: str,
@@ -178,10 +211,10 @@ def fit_text(
     bold: bool = False,
 ) -> str:
     value = str(value)
-    if draw.textlength(value, font=font(size, bold)) <= max_width:
+    if measure_text(draw, value, size, bold) <= max_width:
         return value
     ellipsis = "…"
-    while value and draw.textlength(value + ellipsis, font=font(size, bold)) > max_width:
+    while value and measure_text(draw, value + ellipsis, size, bold) > max_width:
         value = value[:-1]
     return value + ellipsis if value else ellipsis
 
@@ -194,7 +227,6 @@ def wrap_text(
     max_lines: int = 3,
     bold: bool = False,
 ) -> list[str]:
-    fnt = font(size, bold)
     lines: list[str] = []
     current = ""
     for char in str(value):
@@ -202,7 +234,7 @@ def wrap_text(
             lines.append(current)
             current = ""
             continue
-        if draw.textlength(current + char, font=fnt) > max_width:
+        if measure_text(draw, current + char, size, bold) > max_width:
             lines.append(current)
             current = char
         else:
@@ -215,7 +247,7 @@ def wrap_text(
         lines = [""]
     if len(lines) == max_lines and len("".join(lines)) < len(str(value)):
         last = lines[-1]
-        while draw.textlength(last + "…", font=fnt) > max_width and last:
+        while measure_text(draw, last + "…", size, bold) > max_width and last:
             last = last[:-1]
         lines[-1] = last + "…"
     return lines
@@ -330,8 +362,21 @@ class CardRenderer:
         return await self.assets.get_many(urls)
 
     def _save(self, image: Image.Image, name: str) -> str:
-        path = self.output_dir / f"{name}-{int(datetime.now().timestamp() * 1000)}.png"
+        path = self.output_dir / (
+            f"{name}-{int(datetime.now().timestamp() * 1000)}-{uuid.uuid4().hex[:8]}.png"
+        )
         image.convert("RGB").save(path, "PNG")
+        with _SAVE_LOCK:
+            files = sorted(
+                self.output_dir.glob("*.png"),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+            for old in files[200:]:
+                try:
+                    old.unlink(missing_ok=True)
+                except OSError:
+                    pass
         return str(path)
 
     # ------------------------------------------------------------------ 玩家
@@ -352,7 +397,12 @@ class CardRenderer:
         left_x, left_w = M, 850
         right_x, right_w = 890, W - M - 890
         match_rows = len(report.matches)
-        match_h = 40 + match_rows * 56
+        if match_rows:
+            match_h = 40 + match_rows * 56
+        elif report.recent_hidden:
+            match_h = 84
+        else:
+            match_h = 0
         char_h = 40 + max(1, min(5, len(report.characters))) * 46
         duo_h = (40 + min(3, len(report.duo)) * 46) if report.duo else 0
         right_h = 300 + 20 + char_h + (20 + duo_h if duo_h else 0)
@@ -450,6 +500,8 @@ class CardRenderer:
                 GOLD,
                 True,
             )
+        elif report.rating_note:
+            text(draw, (M + 38, 250), report.rating_note, 13, (200, 203, 212))
 
         # 标签栏
         rounded(draw, (M, 312, W - M, tab_bottom), 0, WHITE)
@@ -461,13 +513,31 @@ class CardRenderer:
             text(draw, (tx, 336), label, 15, color, index == 0)
             if index == 0:
                 draw.rectangle((tx - 8, tab_bottom - 3, tx + 34, tab_bottom), fill=GOLD)
-        updated = getattr(report, "updated_at", None)
-        if updated:
-            text(draw, (W - M - 20, 336), f"更新于 {updated}", 11, MUTED, anchor="ra")
+        if report.season_note:
+            text(
+                draw,
+                (W - M - 20, 336),
+                fit_text(draw, report.season_note, 11, 520),
+                11,
+                GOLD,
+                anchor="ra",
+            )
 
         # 左侧概要条
         self._draw_summary_bar(canvas, report, (left_x, body_top, left_x + left_w, body_top + 110))
-        self._draw_matches_table(canvas, report, (left_x, body_top + 122), blobs)
+        if report.matches:
+            self._draw_matches_table(canvas, report, (left_x, body_top + 122), blobs)
+        elif report.recent_hidden:
+            hidden_box = (left_x, body_top + 122, left_x + left_w, body_top + 122 + 84)
+            rounded(draw, hidden_box, 4, WHITE, LINE)
+            text(
+                draw,
+                (hidden_box[0] + 18, hidden_box[1] + 42),
+                "最近对局展示已关闭（可在插件配置中调整 recent_matches）",
+                12,
+                MUTED,
+                anchor="lm",
+            )
         self._draw_mmr_panel(
             canvas,
             report,
@@ -501,15 +571,13 @@ class CardRenderer:
     def _draw_summary_bar(self, canvas, report: PlayerReport, box) -> None:
         draw = ImageDraw.Draw(canvas)
         rounded(draw, box, 4, WHITE, LINE)
-        count = len(report.matches)
+        stats = report.stats
+        play = int(stats.get("play") or 0)
         values = [
-            ("近期对局", f"{count} 场"),
-            ("获胜", f"{sum(1 for m in report.matches if m.rank == 1)} 场"),
-            (
-                "平均排名",
-                f"{sum(m.rank if m.rank != 99 else 8 for m in report.matches) / max(1, count):.1f}",
-            ),
-            ("平均伤害", f"{sum(m.damage for m in report.matches) / max(1, count):,.0f}"),
+            ("场次", f"{play:,}"),
+            ("胜率", f"{stats.get('win_rate', 0) * 100:.2f}%"),
+            ("平均排名", f"#{stats.get('avg_rank', 0):.2f}" if play else "-"),
+            ("平均伤害", f"{stats.get('avg_damage', 0):,}"),
         ]
         for index, (label, value) in enumerate(values):
             cx = box[0] + 24 + index * 206
@@ -592,7 +660,7 @@ class CardRenderer:
             ("场次", f"{stats['play']:,}"),
             ("胜率", f"{stats['win_rate'] * 100:.2f}%"),
             ("TOP3", f"{stats['top3_rate'] * 100:.2f}%"),
-            ("平均排名", f"#{stats['avg_rank']:.2f}"),
+            ("平均排名", f"#{stats['avg_rank']:.2f}" if stats.get("play") else "-"),
             ("平均击杀", f"{stats['avg_kills']:.2f}"),
             ("平均助攻", f"{stats['avg_assists']:.2f}"),
             ("平均TK", f"{stats['avg_team_kills']:.2f}"),

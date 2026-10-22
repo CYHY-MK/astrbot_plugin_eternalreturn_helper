@@ -153,6 +153,9 @@ class PlayerReport:
     avatar: str = ""
     banner: str = ""
     tier_icon: str = ""
+    season_note: str = ""
+    rating_note: str = ""
+    recent_hidden: bool = False
 
 
 @dataclass
@@ -264,6 +267,8 @@ class EternalReturnService:
         self.client = client
         self.config = config or {}
         self._tasks: set[asyncio.Task] = set()
+        self._closed = False
+        self._last_sync: dict[str, float] = {}
 
     # ------------------------------------------------------------------ 通用
     def _default_mode(self) -> int:
@@ -278,11 +283,23 @@ class EternalReturnService:
             self.client.masteries(),
             self.client.tiers(),
             self.client.current_season(),
+            self.client.seasons(),
         ]
         if include_items:
             tasks.append(self.client.items())
-        results = await asyncio.gather(*tasks)
-        characters, masteries, tiers, season = results[:4]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for index, result in enumerate(results):
+            if isinstance(result, BaseException):
+                if include_items and index == 5:
+                    results[index] = None  # 装备图标缺失不应阻断整份报告
+                    continue
+                raise result
+        characters, masteries, tiers, season, season_data = results[:5]
+        seasons_by_id = {
+            as_int(item.get("id")): item
+            for item in (season_data.get("seasons") or [])
+            if item.get("id") is not None
+        }
         data = {
             "characters": characters,
             "characters_by_id": character_map(characters),
@@ -290,14 +307,23 @@ class EternalReturnService:
             "tiers": tiers,
             "season": season,
             "season_name": str(season.get("name") or "当前赛季"),
+            "seasons_by_id": seasons_by_id,
         }
         if include_items:
-            data["items_by_id"] = item_map(results[4])
+            data["items_by_id"] = item_map(results[5]) if results[5] else {}
         return data
 
     def _fire_sync(self, nickname: str) -> None:
-        if not self.config.get("auto_sync", True):
+        if self._closed or not self.config.get("auto_sync", True):
             return
+        now = _now_ts()
+        last = self._last_sync.get(nickname)
+        if last is not None and now - last < 300:
+            return
+        self._last_sync[nickname] = now
+        if len(self._last_sync) > 500:
+            cutoff = now - 300
+            self._last_sync = {k: v for k, v in self._last_sync.items() if v >= cutoff}
         task = asyncio.create_task(self._sync_safe(nickname))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -310,6 +336,7 @@ class EternalReturnService:
 
     async def close(self) -> None:
         """取消后台同步任务，供插件卸载时调用。"""
+        self._closed = True
         tasks = list(self._tasks)
         for task in tasks:
             task.cancel()
@@ -331,76 +358,71 @@ class EternalReturnService:
 
         player = profile.get("player") or {}
         display_name = str(player.get("name") or nickname)
-        seasons = [
-            season for season in (profile.get("playerSeasons") or []) if season.get("seasonId")
-        ]
-        if not seasons:
-            raise UpstreamError("该玩家无任何赛季有游玩数据。")
-        season_info = seasons[0]
-        season_id = int(season_info.get("seasonId") or 0)
-
-        static_task = asyncio.create_task(self._static(include_items=True))
-        seasons_data = await self.client.seasons()
-        season_key = None
-        for season in seasons_data.get("seasons") or []:
-            if int(season.get("id") or 0) == season_id:
-                season_key = season.get("key")
-                break
-
-        matching_query = MATCHING_MODE_QUERY.get(mode, "RANK")
-        matches_task = asyncio.create_task(
-            self.client.matches(
-                display_name,
-                season_key=season_key,
-                matching_mode=matching_query,
-                team_mode="ALL",
-                page=1,
-            )
-        )
-        character_stats_task = asyncio.create_task(
-            self._character_stats_for(mode, season_info.get("tierId"))
-        )
-        static = await static_task
-        matches = (await matches_task).get("matches") or []
-        try:
-            character_stats = await character_stats_task
-        except Exception:  # noqa: BLE001 - 评分缺少基线时退化为“数据不足”
-            character_stats = None
-
-        overview = pick_overview(profile, mode, 0)
-        stats = self._build_stats(overview or {})
+        static = await self._static(include_items=True)
+        tier = static["tiers"]
         characters_by_id = static["characters_by_id"]
         masteries = static["masteries_by_id"]
         items_by_id = static.get("items_by_id") or {}
 
-        tier = static["tiers"]
+        season_info, season_id, season_key, season_label, season_note = self._select_season(
+            profile, static
+        )
+        overview = pick_overview(profile, season_id, mode, 0)
+        if overview is None:
+            if season_note:
+                raise UpstreamError(
+                    f"{season_note}；该玩家在"
+                    f"「{MATCHING_MODE_NAMES.get(mode, '所选')}」模式没有可展示的对局数据。"
+                )
+            raise UpstreamError(
+                f"该玩家在「{MATCHING_MODE_NAMES.get(mode, '所选')}」模式暂无赛季数据。"
+            )
+        stats = self._build_stats(overview)
+
+        matches_data = await self._fetch_matches_and_baseline(
+            display_name,
+            mode,
+            season_key,
+            season_info.get("tierId"),
+        )
+        matches, character_stats = matches_data
+
         tier_id = int(season_info.get("tierId") or 0)
         tier_text = tier_name(tier, tier_id) if mode == 3 else "非排位"
-        rank_global, rank_local = self._find_rank(profile, tier_id, mode)
+        rank_global, rank_local = self._find_rank(profile, season_id, mode, tier_id)
+        mmr_trend = self._mmr_trend(overview)
 
-        mmr_trend = self._mmr_trend(profile)
         rating = None
-        if self.config.get("show_rating", True) and matches:
-            result = rate_player(
-                matches,
-                character_stats,
-                mode,
-                player_level=as_int(player.get("accountLevel")),
-                mmr_history=[point["mmr"] for point in mmr_trend],
-            )
-            rating = RatingView.from_result(result)
+        rating_note = ""
+        if self.config.get("show_rating", True):
+            if mode != 3:
+                rating_note = "评分仅支持排位模式"
+            elif not matches:
+                rating_note = "最近没有对局，无法评分"
+            elif character_stats is None:
+                rating_note = "公开基线暂不可用"
+            else:
+                result = rate_player(
+                    matches,
+                    character_stats,
+                    mode,
+                    player_level=as_int(player.get("accountLevel")),
+                    mmr_history=[point["mmr"] for point in mmr_trend],
+                )
+                rating = RatingView.from_result(result)
 
-        character_uses = self._character_uses(overview or {}, characters_by_id)
-        duo = self._duo_mates(profile, characters_by_id)
+        character_uses = self._character_uses(overview, characters_by_id)
+        duo = self._duo_mates(overview, characters_by_id)
+        limit = max(0, int(recent_limit))
         recent = [
             self._match_item(game, characters_by_id, masteries, items_by_id)
-            for game in matches[: max(0, int(recent_limit))]
+            for game in matches[:limit]
         ]
 
         character_image = ""
         banner = ""
         avatar = ""
-        overview_characters = (overview or {}).get("characterStats") or []
+        overview_characters = overview.get("characterStats") or []
         if overview_characters:
             char = characters_by_id.get(int(overview_characters[0].get("key") or 0))
             if char:
@@ -416,7 +438,7 @@ class EternalReturnService:
         return PlayerReport(
             nickname=display_name,
             level=as_int(player.get("accountLevel")),
-            season_name=static["season_name"],
+            season_name=season_label,
             mode_id=mode,
             mode_name=MATCHING_MODE_NAMES.get(mode, "排位"),
             tier=tier_text,
@@ -435,72 +457,93 @@ class EternalReturnService:
             avatar=avatar,
             banner=banner,
             tier_icon=tier_image(tier, tier_id) if mode == 3 else "",
+            season_note=season_note,
+            rating_note=rating_note,
+            recent_hidden=limit == 0,
         )
 
-    async def _character_stats_for(self, mode: int, tier_id) -> dict | None:
-        team_mode = "COBALT" if mode == 6 else ("ALL" if mode == 0 else "SQUAD")
-        tier_query = TIER_ID_TO_QUERY.get(as_int(tier_id), "diamond_plus")
-        return await self.client.character_stats(
-            team_mode=team_mode,
+    def _select_season(self, profile: dict, static: dict) -> tuple[dict, int, str, str, str]:
+        player_seasons = [
+            item for item in (profile.get("playerSeasons") or []) if item.get("seasonId")
+        ]
+        if not player_seasons:
+            raise UpstreamError("该玩家无任何赛季有游玩数据。")
+        current = static.get("season") or {}
+        current_id = as_int(current.get("id"))
+        current_entry = next(
+            (item for item in player_seasons if as_int(item.get("seasonId")) == current_id),
+            None,
+        )
+        if current_entry is not None:
+            season_info = current_entry
+            is_current = True
+        else:
+            season_info = player_seasons[0]
+            is_current = False
+        season_id = as_int(season_info.get("seasonId"))
+        meta = (static.get("seasons_by_id") or {}).get(season_id)
+        if not meta:
+            raise UpstreamError("无法解析玩家所在赛季，请稍后再试。")
+        season_label = str(meta.get("name") or f"赛季 {season_id}")
+        if is_current:
+            note = "" if as_int(season_info.get("mmr")) > 0 else "本赛季暂无排位数据"
+        else:
+            note = f"本赛季无数据，展示上次活跃的{season_label}"
+        return (
+            season_info,
+            season_id,
+            str(meta.get("key") or ""),
+            season_label,
+            note,
+        )
+
+    async def _fetch_matches_and_baseline(
+        self, nickname: str, mode: int, season_key: str, tier_id
+    ) -> tuple[list[dict], dict | None]:
+        matches_coro = self.client.matches(
+            nickname,
+            season_key=season_key,
             matching_mode=MATCHING_MODE_QUERY.get(mode, "RANK"),
-            tier=tier_query,
+            team_mode="ALL",
+            page=1,
         )
+        if mode != 3:
+            data = await matches_coro
+            return (data.get("matches") or []), None
+        matches_result, stats_result = await asyncio.gather(
+            matches_coro,
+            self._character_stats_for(mode, tier_id),
+            return_exceptions=True,
+        )
+        if isinstance(matches_result, BaseException):
+            raise matches_result
+        matches = (matches_result or {}).get("matches") or []
+        character_stats = None if isinstance(stats_result, BaseException) else stats_result
+        return matches, character_stats
 
-    def _build_stats(self, overview: dict) -> dict:
-        play = as_int(overview.get("play"))
-        win = as_int(overview.get("win"))
-        top2 = as_int(overview.get("top2"))
-        top3 = as_int(overview.get("top3"))
-        place = as_int(overview.get("place"))
-        kills = as_int(overview.get("playerKill"))
-        assists = as_int(overview.get("playerAssistant"))
-        deaths = as_int(overview.get("playerDeaths"))
-        team_kill = as_int(overview.get("teamKill"))
-        damage = as_int(overview.get("damageToPlayer"))
-        monster = as_int(overview.get("monsterKill"))
-        credit = as_int(overview.get("totalGainVFCredit"))
-        vision = as_int(overview.get("viewContribution"))
-        mmr_gain = as_int(overview.get("mmrGain"))
-        return {
-            "play": play,
-            "win": win,
-            "win_rate": div(win, play),
-            "top1_rate": div(win, play),
-            "top2_rate": div(top2, play),
-            "top3_rate": div(top3, play),
-            "avg_rank": div(place, play, 8.0),
-            "avg_kills": div(kills, play),
-            "avg_assists": div(assists, play),
-            "avg_deaths": div(deaths, play),
-            "avg_team_kills": div(team_kill, play),
-            "avg_damage": int(div(damage, play)),
-            "avg_monster": div(monster, play),
-            "avg_credit": div(credit, play),
-            "avg_vision": div(vision, play),
-            "kda": div(kills + assists, max(1, deaths)),
-            "mmr_gain": mmr_gain,
-        }
-
-    def _find_rank(self, profile: dict, tier_id: int, mode: int) -> tuple[int | None, int | None]:
+    def _find_rank(
+        self, profile: dict, season_id: int, mode: int, tier_id: int
+    ) -> tuple[int | None, int | None]:
         if mode != 3 or tier_id not in (7, 8):
             return None, None
-        for overview in profile.get("playerSeasonOverviews") or []:
-            rank = overview.get("rank")
-            if not rank:
-                continue
-            global_rank = (rank.get("global") or {}).get("rank")
-            local_rank = (rank.get("local") or {}).get("rank")
-            return (
-                as_int(global_rank) or None,
-                as_int(local_rank) or None,
-            )
-        return None, None
+        candidates = [
+            item
+            for item in (profile.get("playerSeasonOverviews") or [])
+            if as_int(item.get("seasonId")) == season_id
+            and as_int(item.get("matchingModeId")) == 3
+            and item.get("rank")
+        ]
+        if not candidates:
+            return None, None
+        candidates.sort(key=lambda item: 0 if as_int(item.get("teamModeId")) == 3 else 1)
+        rank = candidates[0].get("rank") or {}
+        return (
+            as_int((rank.get("global") or {}).get("rank")) or None,
+            as_int((rank.get("local") or {}).get("rank")) or None,
+        )
 
-    def _mmr_trend(self, profile: dict) -> list[dict]:
-        overviews = profile.get("playerSeasonOverviews") or []
-        if not overviews:
-            return []
-        points = (overviews[0].get("mmrStats") or [])[:7]
+    def _mmr_trend(self, overview: dict) -> list[dict]:
+        points = (overview.get("mmrStats") or [])[:7]
         trend = []
         for point in reversed(points):
             if not point:
@@ -529,29 +572,71 @@ class EternalReturnService:
             )
         return uses
 
-    def _duo_mates(self, profile: dict, characters_by_id: dict) -> list[DuoMate]:
-        for overview in profile.get("playerSeasonOverviews") or []:
-            if overview.get("duoStats"):
-                mates = []
-                for duo in overview["duoStats"][:8]:
-                    play = as_int(duo.get("play"))
-                    teammate_chars = duo.get("characterStats") or []
-                    mate_char = (
-                        characters_by_id.get(as_int(teammate_chars[0].get("key")))
-                        if teammate_chars
-                        else None
-                    ) or {}
-                    mates.append(
-                        DuoMate(
-                            name=str(duo.get("nickname") or "未知"),
-                            plays=play,
-                            win_rate=div(duo.get("win"), play),
-                            avg_rank=div(duo.get("place"), play, 8.0),
-                            image=_normalize_url(str(mate_char.get("imageUrl") or "")),
-                        )
-                    )
-                return mates
-        return []
+    def _duo_mates(self, overview: dict, characters_by_id: dict) -> list[DuoMate]:
+        mates = []
+        for duo in (overview.get("duoStats") or [])[:8]:
+            play = as_int(duo.get("play"))
+            teammate_chars = duo.get("characterStats") or []
+            mate_char = (
+                characters_by_id.get(as_int(teammate_chars[0].get("key")))
+                if teammate_chars
+                else None
+            ) or {}
+            mates.append(
+                DuoMate(
+                    name=str(duo.get("nickname") or "未知"),
+                    plays=play,
+                    win_rate=div(duo.get("win"), play),
+                    avg_rank=div(duo.get("place"), play, 8.0),
+                    image=_normalize_url(str(mate_char.get("imageUrl") or "")),
+                )
+            )
+        return mates
+
+    async def _character_stats_for(self, mode: int, tier_id) -> dict:
+        if mode != 3:
+            raise UpstreamError("角色公开基线仅支持排位模式。")
+        tier_query = TIER_ID_TO_QUERY.get(as_int(tier_id), "diamond_plus")
+        return await self.client.character_stats(
+            team_mode="SQUAD",
+            matching_mode="RANK",
+            tier=tier_query,
+        )
+
+    def _build_stats(self, overview: dict) -> dict:
+        play = as_int(overview.get("play"))
+        win = as_int(overview.get("win"))
+        top2 = as_int(overview.get("top2"))
+        top3 = as_int(overview.get("top3"))
+        place = as_int(overview.get("place"))
+        kills = as_int(overview.get("playerKill"))
+        assists = as_int(overview.get("playerAssistant"))
+        deaths = as_int(overview.get("playerDeaths"))
+        team_kill = as_int(overview.get("teamKill"))
+        damage = as_int(overview.get("damageToPlayer"))
+        monster = as_int(overview.get("monsterKill"))
+        credit = as_int(overview.get("totalGainVFCredit"))
+        vision = as_int(overview.get("viewContribution"))
+        mmr_gain = as_int(overview.get("mmrGain"))
+        return {
+            "play": play,
+            "win": win,
+            "win_rate": div(win, play),
+            "top1_rate": div(win, play),
+            "top2_rate": div(top2, play),
+            "top3_rate": div(top3, play),
+            "avg_rank": div(place, play, 0.0),
+            "avg_kills": div(kills, play),
+            "avg_assists": div(assists, play),
+            "avg_deaths": div(deaths, play),
+            "avg_team_kills": div(team_kill, play),
+            "avg_damage": int(div(damage, play)),
+            "avg_monster": div(monster, play),
+            "avg_credit": div(credit, play),
+            "avg_vision": div(vision, play),
+            "kda": div(kills + assists, max(1, deaths)),
+            "mmr_gain": mmr_gain,
+        }
 
     def _match_item(
         self,
@@ -656,7 +741,7 @@ class EternalReturnService:
                     )
                 )
         rows.sort(key=lambda row: (-(row.score or 0), _grade_order(row.grade)))
-        updated = result.get("meta", {}).get("updatedAt")
+        updated = (result.get("meta") or {}).get("updatedAt")
         return CharacterStatsReport(
             tier_label=_tier_label(tier_query),
             mode_name=MATCHING_MODE_NAMES.get(mode, "排位"),
@@ -667,14 +752,26 @@ class EternalReturnService:
             updated_at=_format_timestamp(updated),
         )
 
+    async def _current_season_key(self, current: dict) -> str:
+        season_id = as_int(current.get("id"))
+        try:
+            data = await self.client.seasons()
+            for item in data.get("seasons") or []:
+                if as_int(item.get("id")) == season_id:
+                    return str(item.get("key") or "")
+        except Exception:  # noqa: BLE001 - 回退到旧字段
+            pass
+        return str(current.get("type") or "")
+
     # ------------------------------------------------------------------ 段位统计
     async def tier_report(self, server: str | None = None) -> TierReport:
         server_key = convert_server(server)
         current = await self.client.current_season()
+        season_key = await self._current_season_key(current)
         distributions, leaderboard, tiers = await asyncio.gather(
             self.client.tier_distribution(team_mode="SQUAD"),
             self.client.leaderboard(
-                season_key=str(current.get("type") or ""),
+                season_key=season_key,
                 server_name=server_key,
                 team_mode="SQUAD",
             ),
@@ -729,8 +826,9 @@ class EternalReturnService:
     async def eternal_score_report(self, server: str | None = None) -> EternalScoreReport:
         server_key = convert_server(server)
         current = await self.client.current_season()
+        season_key = await self._current_season_key(current)
         leaderboard = await self.client.leaderboard(
-            season_key=str(current.get("type") or ""),
+            season_key=season_key,
             server_name=server_key,
             team_mode="SQUAD",
         )
