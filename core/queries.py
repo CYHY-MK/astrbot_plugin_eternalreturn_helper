@@ -699,7 +699,11 @@ class EternalReturnService:
                 tier=tier_query,
             ),
             self._static(),
+            return_exceptions=True,
         )
+        for item in (result, static):
+            if isinstance(item, BaseException):
+                raise item
         snapshot = result.get("characterStatSnapshot") or {}
         tier_count = as_int(snapshot.get("tierCount"))
         tier_games = as_int(snapshot.get("tierGameCount"))
@@ -776,7 +780,11 @@ class EternalReturnService:
                 team_mode="SQUAD",
             ),
             self.client.tiers(),
+            return_exceptions=True,
         )
+        for item in (distributions, leaderboard, tiers):
+            if isinstance(item, BaseException):
+                raise item
         counts: dict[int, int] = {}
         rates: dict[int, float] = {}
         for item in distributions.get("distributions") or []:
