@@ -350,6 +350,7 @@ class EternalReturnHelperPlugin(Star):
         event: AstrMessageEvent,
         nickname: str = "",
         mode: str = "",
+        view: str = "",
     ):
         """查询永恒轮回玩家战绩、段位与最近对局。"""
         nickname = _normalize_text(nickname)
@@ -374,6 +375,24 @@ class EternalReturnHelperPlugin(Star):
             )
             return
         mode = _normalize_text(mode)
+        view = _normalize_text(view)
+        page_aliases = {"实验体", "皮肤", "皮肤统计", "历史对局", "战绩"}
+        if mode in page_aliases:
+            mode, view = view, mode
+        if view:
+            if view == "实验体":
+                target = self.character_view(event, nickname, mode)
+            elif view in ("皮肤", "皮肤统计"):
+                target = self.skin_view(event, nickname, mode)
+            elif view in ("历史对局", "战绩"):
+                target = self.match_history(event, nickname, "", mode)
+            else:
+                yield event.plain_result("未知的个人页，可选：实验体 / 历史对局 / 皮肤统计。")
+                return
+            async for result in target:
+                yield result
+            return
+
         mode_error = self._mode_error(mode, {0, 2, 3, 6})
         if mode_error:
             yield event.plain_result(mode_error)
