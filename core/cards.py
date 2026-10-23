@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import logging
 import math
 import os
 import tempfile
@@ -18,6 +17,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from astrbot.api import logger
 from PIL import Image, ImageChops, ImageDraw, ImageFont, ImageOps
 
 from .assets import AssetCache
@@ -104,7 +104,7 @@ _FONT_KO_BOLD = next(
 _FONT_CACHE: dict[tuple[int, bool], ImageFont.FreeTypeFont] = {}
 _SAVE_LOCK = threading.Lock()
 if _FONT_BOLD is None or _FONT_REGULAR is None:
-    logging.getLogger("astrbot").warning(
+    logger.warning(
         "未找到可用的中文字体，卡片中文可能显示为方框；建议安装 Noto Sans CJK 或微软雅黑。"
     )
 _KO_CACHE: dict[tuple[int, bool], ImageFont.FreeTypeFont] = {}
