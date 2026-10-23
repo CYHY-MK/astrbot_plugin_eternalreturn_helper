@@ -488,7 +488,7 @@ def format_item_markdown(result: ItemQueryResult) -> str:
 # ---------------------------------------------------------------------- 帮助
 
 
-def help_text(prefix: str, *, version: str = "2.1.0") -> str:
+def help_text(prefix: str, *, version: str = "2.2.0") -> str:
     p = prefix or "/"
     return "\n".join(
         [
@@ -511,6 +511,7 @@ def help_text(prefix: str, *, version: str = "2.1.0") -> str:
             "",
             "模式：排位 / 匹配 / 钴协议 / 全部，默认排位",
             "页面：实验体 / 历史对局 / 皮肤统计（也可用独立指令）",
+            "个人页优先发送 DAK.GG 官网截图；截图失败自动回退卡片",
             "服务器：亚1 / 亚2 / 亚3 / 美1 / 欧1 / 南1",
             "",
             f"示例：{p}查询玩家 RIOORI 排位",
