@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.1
+
+- 按 AstrBot 插件市场审查要求，`core/cards.py` 不再使用 Python 内置 `logging`，统一改为 `from astrbot.api import logger`。
+- 提供 GitHub Release 打包下载，避免只能拉源码。
+
 ## 2.2.0
 
 - 个人页默认改为**直接截取 DAK.GG 官网**：`/查询玩家`、`/查询实验体`、`/历史对局`、`/查询皮肤` 优先发送官网原版页面截图。
