@@ -488,11 +488,11 @@ def format_item_markdown(result: ItemQueryResult) -> str:
 # ---------------------------------------------------------------------- 帮助
 
 
-def help_text(prefix: str, *, version: str = "2.2.1") -> str:
+def help_text(prefix: str, *, version: str = "2.3.0") -> str:
     p = prefix or "/"
     return "\n".join(
         [
-            f"【永恒轮回小助手】v{version}",
+            f"【永恒轮回小帮手】v{version}",
             "数据来源：DAK.GG（er.dakgg.io）",
             DIVIDER,
             "玩家战绩",
