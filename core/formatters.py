@@ -7,10 +7,13 @@ from .queries import (
     GRADE_NAMES,
     CharacterDetail,
     CharacterStatsReport,
+    CharacterViewReport,
     EternalScoreReport,
     ItemQueryResult,
+    MatchHistoryReport,
     MatchItem,
     PlayerReport,
+    SkinViewReport,
     TierReport,
     server_label,
 )
@@ -82,7 +85,7 @@ def format_player_text(report: PlayerReport) -> str:
 
     if report.characters:
         lines.append("")
-        lines.append("常用角色")
+        lines.append("常用实验体")
         for use in report.characters[:5]:
             lines.append(
                 f"· {use.name} {use.plays}场 胜率{percent(use.win_rate)} "
@@ -163,7 +166,7 @@ def format_player_markdown(report: PlayerReport) -> str:
     if report.characters:
         lines += [
             "",
-            "## 常用角色",
+            "## 常用实验体",
             "| 角色 | 场次 | 胜率 | 平均排名 | 伤害 |",
             "|---|---|---|---|---|",
         ]
@@ -485,7 +488,7 @@ def format_item_markdown(result: ItemQueryResult) -> str:
 # ---------------------------------------------------------------------- 帮助
 
 
-def help_text(prefix: str, *, version: str = "2.0.0") -> str:
+def help_text(prefix: str, *, version: str = "2.1.0") -> str:
     p = prefix or "/"
     return "\n".join(
         [
@@ -498,6 +501,9 @@ def help_text(prefix: str, *, version: str = "2.0.0") -> str:
             "",
             "角色与数据",
             f"  {p}查询角色 <角色名> [模式]  （别名：查角色）",
+            f"  {p}查询实验体 <昵称> [模式]  （别名：实验体）",
+            f"  {p}历史对局 <昵称> [页码] [模式]  （别名：对局记录）",
+            f"  {p}查询皮肤 <昵称> [模式]  （别名：皮肤统计）",
             f"  {p}角色数据 [段位]  （别名：角色排行）",
             f"  {p}段位统计 [服务器]  （别名：段位分布）",
             f"  {p}永恒多少分 [服务器]  （分数线）",
@@ -510,6 +516,122 @@ def help_text(prefix: str, *, version: str = "2.0.0") -> str:
             f"示例：{p}查询角色 杰琪",
             f"示例：{p}查询装备 军刀",
             "",
-            f"版本 {version} · 功能设计参考 EternalReturnLoMu",
+            f"版本 {version} · 纯 AI 制作，仅供学习交流",
+            "如涉及侵权请联系 QQ 邮箱 3033980089@qq.com",
         ]
     )
+
+
+# ---------------------------------------------------------------------- 个人页：实验体 / 皮肤 / 历史
+
+
+def _view_intro(report) -> list[str]:
+    header = report.header
+    sub = f"{header.nickname} · Lv.{header.level} · {_season(header.season_name)} · {header.mode_name}"
+    if header.season_note:
+        sub += f" · {header.season_note}"
+    stats = header.stats
+    avg_rank = f"#{stats['avg_rank']:.2f}" if stats.get("play") else "-"
+    return [
+        sub,
+        f"场次 {fmt_int(stats['play'])}  胜率 {percent(stats['win_rate'])}  "
+        f"TOP3 {percent(stats['top3_rate'])}  平均排名 {avg_rank}",
+    ]
+
+
+def format_character_view_text(report: CharacterViewReport, limit: int = 50) -> str:
+    lines = ["【永恒轮回】实验体统计"] + _view_intro(report)
+    lines.append(DIVIDER)
+    if not report.rows:
+        lines.append("暂无实验体数据。")
+    for row in report.rows[:limit]:
+        lines.append(
+            f"· {row.name} {row.plays}场 胜率{percent(row.win_rate)} "
+            f"TOP3 {percent(row.top3_rate)} 平均#{row.avg_rank:.2f} "
+            f"伤害{fmt_int(row.avg_damage)} RP{_signed(row.mmr_gain)}"
+        )
+    if len(report.rows) > limit:
+        lines.append(f"…… 共 {len(report.rows)} 个实验体，仅显示前 {limit} 个")
+    lines += ["", "数据来源 DAK.GG"]
+    return "\n".join(lines)
+
+
+def format_character_view_markdown(report: CharacterViewReport, limit: int = 60) -> str:
+    lines = [
+        "# 永恒轮回 · 实验体统计",
+        f"**{report.header.nickname}** · " + " · ".join(_view_intro(report)),
+        "",
+        "| 实验体 | 场次 | 胜率 | TOP3 | 平均排名 | 平均伤害 | RP |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for row in report.rows[:limit]:
+        lines.append(
+            f"| {row.name} | {row.plays} | {percent(row.win_rate)} | {percent(row.top3_rate)} | "
+            f"#{row.avg_rank:.2f} | {fmt_int(row.avg_damage)} | {_signed(row.mmr_gain)} |"
+        )
+    lines += ["", "> 数据来源 DAK.GG"]
+    return "\n".join(lines)
+
+
+def format_skin_view_text(report: SkinViewReport, limit: int = 40) -> str:
+    lines = ["【永恒轮回】皮肤统计"] + _view_intro(report)
+    lines.append(DIVIDER)
+    for row in report.rows[:limit]:
+        lines.append(
+            f"· {row.skin}（{row.character}）{row.plays}场 胜率{percent(row.win_rate)} "
+            f"平均#{row.avg_rank:.2f} 伤害{fmt_int(row.avg_damage)}"
+        )
+    if not report.rows:
+        lines.append("暂无皮肤数据。")
+    if len(report.rows) > limit:
+        lines.append(f"…… 共 {len(report.rows)} 款皮肤，仅显示前 {limit} 款")
+    lines += ["", "数据来源 DAK.GG"]
+    return "\n".join(lines)
+
+
+def format_skin_view_markdown(report: SkinViewReport, limit: int = 40) -> str:
+    lines = [
+        "# 永恒轮回 · 皮肤统计",
+        f"**{report.header.nickname}** · " + " · ".join(_view_intro(report)),
+        "",
+        "| 皮肤 | 实验体 | 场次 | 胜率 | 平均排名 | 平均伤害 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for row in report.rows[:limit]:
+        lines.append(
+            f"| {row.skin} | {row.character} | {row.plays} | {percent(row.win_rate)} | "
+            f"#{row.avg_rank:.2f} | {fmt_int(row.avg_damage)} |"
+        )
+    lines += ["", "> 数据来源 DAK.GG"]
+    return "\n".join(lines)
+
+
+def format_match_history_text(report: MatchHistoryReport, limit: int = 20) -> str:
+    lines = ["【永恒轮回】历史对局"] + _view_intro(report)
+    lines.append(f"第 {report.page}/{report.total_pages} 页 · 共 {fmt_int(report.total_count)} 场")
+    lines.append(DIVIDER)
+    if not report.matches:
+        lines.append("该页没有对局记录。")
+    for match in report.matches[:limit]:
+        lines.append(_match_line(match))
+    lines += ["", "数据来源 DAK.GG"]
+    return "\n".join(lines)
+
+
+def format_match_history_markdown(report: MatchHistoryReport) -> str:
+    lines = [
+        "# 永恒轮回 · 历史对局",
+        f"**{report.header.nickname}** · " + " · ".join(_view_intro(report)),
+        f"第 {report.page}/{report.total_pages} 页 · 共 {fmt_int(report.total_count)} 场",
+        "",
+        "| 排名 | 模式 | 时间 | 实验体 | K/D/A | 伤害 | RP |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for match in report.matches:
+        lines.append(
+            f"| {match.rank_text} | {match.mode} | {match.played_at} | "
+            f"{match.character} | {match.kills}/{match.deaths}/{match.assists} | "
+            f"{fmt_int(match.damage)} | {_signed(match.mmr_gain)} |"
+        )
+    lines += ["", "> 数据来源 DAK.GG"]
+    return "\n".join(lines)

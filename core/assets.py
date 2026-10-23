@@ -30,7 +30,9 @@ class AssetCache:
     ) -> None:
         self.timeout = max(5.0, float(timeout))
         self.proxy = (proxy or "").strip() or None
-        self.cache_dir = Path(cache_dir or (Path(tempfile.gettempdir()) / "astrbot_er_lomu_assets"))
+        self.cache_dir = Path(
+            cache_dir or (Path(tempfile.gettempdir()) / "astrbot_er_helper_assets")
+        )
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._session: aiohttp.ClientSession | None = None
         self._mem: OrderedDict[str, bytes] = OrderedDict()

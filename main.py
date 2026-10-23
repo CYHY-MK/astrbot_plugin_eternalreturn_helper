@@ -1,7 +1,7 @@
 """永恒轮回小助手 · AstrBot 插件入口。
 
-数据来自 DAK.GG（https://dak.gg/er）；功能设计参考并致敬 LuoRenMu/EternalReturnLoMu，
-代码与卡片排版均为独立实现。
+数据来自 DAK.GG（https://dak.gg/er）。本项目为纯 AI 制作，仅供学习交流；
+如涉及侵权请联系 QQ 邮箱 3033980089@qq.com。UI 只参考 DAK.GG 官网。
 """
 
 from __future__ import annotations
@@ -23,12 +23,18 @@ from .core.formatters import (
     format_character_stats_markdown,
     format_character_stats_text,
     format_character_text,
+    format_character_view_markdown,
+    format_character_view_text,
     format_eternal_score_markdown,
     format_eternal_score_text,
     format_item_markdown,
     format_item_text,
+    format_match_history_markdown,
+    format_match_history_text,
     format_player_markdown,
     format_player_text,
+    format_skin_view_markdown,
+    format_skin_view_text,
     format_tier_markdown,
     format_tier_text,
     help_text,
@@ -36,7 +42,7 @@ from .core.formatters import (
 from .core.models import RANK_TIER_QUERY, parse_matching_mode_strict
 from .core.queries import EternalReturnService
 
-PLUGIN_VERSION = "2.0.1"
+PLUGIN_VERSION = "2.1.0"
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
@@ -320,6 +326,23 @@ class EternalReturnHelperPlugin(Star):
         else:
             yield event.plain_result("你还没有绑定昵称。发送 /绑定昵称 <昵称> 即可绑定。")
 
+    async def _resolve_view_nickname(
+        self, event: AstrMessageEvent, nickname: str
+    ) -> tuple[str, str | None]:
+        nickname = _normalize_text(nickname)
+        if not nickname or nickname == "我":
+            if not self._cfg("enable_binding", True):
+                return "", "昵称绑定功能已关闭，请直接提供玩家昵称。"
+            binding = await self._get_binding(event)
+            if not binding:
+                return "", "请提供玩家昵称，或先使用 /绑定昵称 <昵称> 绑定自己的昵称。"
+            nickname = binding
+        if not is_valid_nickname(nickname):
+            return "", (
+                f"[{hide_nickname(nickname)}] 该名称不合法，EternalReturn 不允许使用这样的名称。"
+            )
+        return nickname, None
+
     # ------------------------------------------------------------------ 玩家
     @filter.command("查询玩家", alias={"查玩家", "永恒查询"})
     async def query_player(
@@ -466,6 +489,117 @@ class EternalReturnHelperPlugin(Star):
         ):
             yield result
 
+    # ------------------------------------------------------------------ 个人页
+    @filter.command("查询实验体", alias={"实验体"})
+    async def character_view(self, event: AstrMessageEvent, nickname: str = "", mode: str = ""):
+        """查看玩家全部实验体的场次、胜率、伤害与 RP。"""
+        nickname, error = await self._resolve_view_nickname(event, nickname)
+        if error:
+            yield event.plain_result(error)
+            return
+        mode = _normalize_text(mode)
+        mode_error = self._mode_error(mode, {0, 2, 3, 6})
+        if mode_error:
+            yield event.plain_result(mode_error)
+            return
+        left = self._cooldown_left(event)
+        if left:
+            yield event.plain_result(f"查询冷却中，请 {left} 秒后再试。")
+            return
+        service = self._ensure_service()
+        try:
+            report = await service.character_view(nickname, mode)
+        except Exception as exc:  # noqa: BLE001
+            if not isinstance(exc, DakGGError):
+                logger.exception("查询实验体失败")
+            yield event.plain_result(self._error_text(exc))
+            return
+        async for result in self._send(
+            event,
+            format_character_view_text(report, 50),
+            format_character_view_markdown(report, 60),
+            lambda: self.renderer.character_view(report),
+        ):
+            yield result
+
+    @filter.command("查询皮肤", alias={"皮肤统计"})
+    async def skin_view(self, event: AstrMessageEvent, nickname: str = "", mode: str = ""):
+        """查看玩家皮肤使用次数、胜率与伤害。"""
+        nickname, error = await self._resolve_view_nickname(event, nickname)
+        if error:
+            yield event.plain_result(error)
+            return
+        mode = _normalize_text(mode)
+        mode_error = self._mode_error(mode, {0, 2, 3, 6})
+        if mode_error:
+            yield event.plain_result(mode_error)
+            return
+        left = self._cooldown_left(event)
+        if left:
+            yield event.plain_result(f"查询冷却中，请 {left} 秒后再试。")
+            return
+        service = self._ensure_service()
+        try:
+            report = await service.skin_view(nickname, mode)
+        except Exception as exc:  # noqa: BLE001
+            if not isinstance(exc, DakGGError):
+                logger.exception("查询皮肤失败")
+            yield event.plain_result(self._error_text(exc))
+            return
+        async for result in self._send(
+            event,
+            format_skin_view_text(report, 40),
+            format_skin_view_markdown(report, 40),
+            lambda: self.renderer.skin_view(report),
+        ):
+            yield result
+
+    @filter.command("历史对局", alias={"对局记录"})
+    async def match_history(
+        self,
+        event: AstrMessageEvent,
+        nickname: str = "",
+        page: str = "",
+        mode: str = "",
+    ):
+        """查看玩家历史对局，可指定页码与模式。"""
+        nickname, error = await self._resolve_view_nickname(event, nickname)
+        if error:
+            yield event.plain_result(error)
+            return
+        page = _normalize_text(page)
+        mode = _normalize_text(mode)
+        if page and not page.isdigit():
+            if not mode and parse_matching_mode_strict(page) is not None:
+                mode, page = page, ""
+            else:
+                yield event.plain_result("页码必须是数字，例如：/历史对局 RIOORI 2 排位")
+                return
+        page_number = max(1, int(page)) if page.isdigit() else 1
+        mode_error = self._mode_error(mode, {0, 2, 3, 6})
+        if mode_error:
+            yield event.plain_result(mode_error)
+            return
+        left = self._cooldown_left(event)
+        if left:
+            yield event.plain_result(f"查询冷却中，请 {left} 秒后再试。")
+            return
+        service = self._ensure_service()
+        try:
+            report = await service.match_history(nickname, mode, page_number)
+        except Exception as exc:  # noqa: BLE001
+            if not isinstance(exc, DakGGError):
+                logger.exception("查询历史对局失败")
+            yield event.plain_result(self._error_text(exc))
+            return
+        async for result in self._send(
+            event,
+            format_match_history_text(report),
+            format_match_history_markdown(report),
+            lambda: self.renderer.match_history(report),
+        ):
+            yield result
+
     # ------------------------------------------------------------------ 段位
     @filter.command("段位统计", alias={"段位分布"})
     async def tier_statistics(self, event: AstrMessageEvent, server: str = ""):
@@ -544,7 +678,7 @@ class EternalReturnHelperPlugin(Star):
     # ------------------------------------------------------------------ 帮助
     @filter.command(
         "永恒轮回帮助",
-        alias={"er帮助", "erhelp", "lomu帮助", "永恒帮助"},
+        alias={"er帮助", "erhelp", "助手帮助", "永恒帮助"},
     )
     async def show_help(self, event: AstrMessageEvent):
         """查看永恒轮回插件的全部指令。"""

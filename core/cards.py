@@ -1,6 +1,6 @@
 """本地美术卡片渲染。
 
-参考 DAK.GG 网页与原项目公开截图的视觉语言，用 Pillow 独立实现的卡片渲染：
+参考 DAK.GG 官网的视觉语言，用 Pillow 独立实现的卡片渲染：
 深色页头、白色面板、深色表头、金色强调色，以及角色/武器/装备图标。
 所有图片来自 DAK.GG CDN，异步下载并缓存。
 """
@@ -24,8 +24,11 @@ from .assets import AssetCache
 from .queries import (
     CharacterDetail,
     CharacterStatsReport,
+    CharacterViewReport,
     ItemQueryResult,
+    MatchHistoryReport,
     PlayerReport,
+    SkinViewReport,
     TierReport,
     server_label,
 )
@@ -355,7 +358,7 @@ class CardRenderer:
 
     def __init__(self, assets: AssetCache) -> None:
         self.assets = assets
-        self.output_dir = Path(tempfile.gettempdir()) / "astrbot_er_lomu_cards"
+        self.output_dir = Path(tempfile.gettempdir()) / "astrbot_er_helper_cards"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     async def _blobs(self, urls: list[str | None]) -> dict[str, bytes]:
@@ -389,37 +392,28 @@ class CardRenderer:
         blobs = await self._blobs(urls)
         return await asyncio.to_thread(self._draw_player, report, blobs)
 
-    def _draw_player(self, report: PlayerReport, blobs: dict[str, bytes]) -> str:
+    def _draw_profile_chrome(
+        self,
+        canvas: Image.Image,
+        report: PlayerReport,
+        blobs: dict[str, bytes],
+        active_tab: int,
+    ) -> None:
         nav_bottom = 64
         hero_bottom = 300
         tab_bottom = 362
-        body_top = 380
-        left_x, left_w = M, 850
-        right_x, right_w = 890, W - M - 890
-        match_rows = len(report.matches)
-        if match_rows:
-            match_h = 40 + match_rows * 56
-        elif report.recent_hidden:
-            match_h = 84
-        else:
-            match_h = 0
-        char_h = 40 + max(1, min(5, len(report.characters))) * 46
-        duo_h = (40 + min(3, len(report.duo)) * 46) if report.duo else 0
-        right_h = 300 + 20 + char_h + (20 + duo_h if duo_h else 0)
-        left_h = 110 + 12 + match_h + 20 + 220
-        height = body_top + max(left_h, right_h) + 50
-        canvas = Image.new("RGBA", (W, height), BG)
         draw = ImageDraw.Draw(canvas)
 
         # 顶部导航
         rounded(draw, (M, 16, W - M, nav_bottom), 6, DARK)
         text(draw, (M + 24, 40), "ER", 20, GOLD, True, "lm")
         text(draw, (M + 58, 40), "永恒轮回小助手", 18, WHITE, True, "lm")
-        for index, label in enumerate(("概览", "战绩", "角色", "排行")):
+        for index, label in enumerate(("概览", "战绩", "实验体", "排行")):
             nx = M + 250 + index * 74
-            color = WHITE if index == 0 else (155, 158, 168)
-            text(draw, (nx, 40), label, 14, color, index == 0, "lm")
-            if index == 0:
+            nav_active = active_tab == 0 and index == 0
+            color = WHITE if nav_active else (155, 158, 168)
+            text(draw, (nx, 40), label, 14, color, nav_active, "lm")
+            if nav_active:
                 draw.rectangle((nx - 8, nav_bottom - 5, nx + 34, nav_bottom - 2), fill=GOLD)
         search_box = (W - M - 230, 28, W - M - 18, 52)
         rounded(draw, search_box, 4, (38, 38, 42), (70, 72, 80))
@@ -502,17 +496,21 @@ class CardRenderer:
             )
         elif report.rating_note:
             text(draw, (M + 38, 250), report.rating_note, 13, (200, 203, 212))
+        elif active_tab in (1, 2, 3):
+            page_label = {1: "历史对局", 2: "实验体统计", 3: "皮肤统计"}[active_tab]
+            text(draw, (M + 38, 250), f"DAK.GG · {page_label}", 13, (200, 203, 212))
 
         # 标签栏
         rounded(draw, (M, 312, W - M, tab_bottom), 0, WHITE)
         draw.line((M, tab_bottom, W - M, tab_bottom), fill=LINE, width=1)
-        tabs = ["概览", "战绩", "角色", "双排"]
+        tabs = ["概览", "战绩", "实验体", "皮肤"]
         for index, label in enumerate(tabs):
             tx = M + 26 + index * 86
-            color = INK if index == 0 else MUTED
-            text(draw, (tx, 336), label, 15, color, index == 0)
-            if index == 0:
-                draw.rectangle((tx - 8, tab_bottom - 3, tx + 34, tab_bottom), fill=GOLD)
+            active = index == active_tab
+            color = INK if active else MUTED
+            text(draw, (tx, 336), label, 15, color, active)
+            if active:
+                draw.rectangle((tx - 8, tab_bottom - 3, tx + 44, tab_bottom), fill=GOLD)
         if report.season_note:
             text(
                 draw,
@@ -522,6 +520,27 @@ class CardRenderer:
                 GOLD,
                 anchor="ra",
             )
+
+    def _draw_player(self, report: PlayerReport, blobs: dict[str, bytes]) -> str:
+        body_top = 380
+        left_x, left_w = M, 850
+        right_x, right_w = 890, W - M - 890
+        match_rows = len(report.matches)
+        if match_rows:
+            match_h = 40 + match_rows * 56
+        elif report.recent_hidden:
+            match_h = 84
+        else:
+            match_h = 0
+        char_h = 40 + max(1, min(5, len(report.characters))) * 46
+        duo_h = (40 + min(3, len(report.duo)) * 46) if report.duo else 0
+        right_h = 300 + 20 + char_h + (20 + duo_h if duo_h else 0)
+        left_h = 110 + 12 + match_h + 20 + 220
+        height = body_top + max(left_h, right_h) + 50
+        canvas = Image.new("RGBA", (W, height), BG)
+        draw = ImageDraw.Draw(canvas)
+
+        self._draw_profile_chrome(canvas, report, blobs, 0)
 
         # 左侧概要条
         self._draw_summary_bar(canvas, report, (left_x, body_top, left_x + left_w, body_top + 110))
@@ -568,6 +587,229 @@ class CardRenderer:
         )
         return self._save(canvas, "player")
 
+    # ------------------------------------------------------------------ 个人页：实验体/皮肤/历史
+    async def character_view(self, report: CharacterViewReport) -> str:
+        header = report.header
+        urls: list[str | None] = [header.banner, header.avatar, header.tier_icon]
+        urls += [row.image for row in report.rows]
+        blobs = await self._blobs(urls)
+        return await asyncio.to_thread(self._draw_character_view, report, blobs)
+
+    def _draw_character_view(self, report: CharacterViewReport, blobs: dict[str, bytes]) -> str:
+        rows = report.rows[:50]
+        height = 380 + 110 + 20 + 40 + max(1, len(rows)) * 46 + 50
+        canvas = Image.new("RGBA", (W, height), BG)
+        draw = ImageDraw.Draw(canvas)
+        self._draw_profile_chrome(canvas, report.header, blobs, 2)
+        self._draw_summary_bar(canvas, report.header, (M, 380, W - M, 490))
+        table_y = 510
+        headers = [
+            ("实验体", 64),
+            ("场次", 600),
+            ("胜率", 720),
+            ("TOP3", 840),
+            ("平均排名", 960),
+            ("平均伤害", 1080),
+            ("场均RP", 1190),
+        ]
+        rounded(draw, (M, table_y, W - M, table_y + 40), 4, TABLE_HEAD)
+        for label, x in headers:
+            text(draw, (x, table_y + 20), label, 11, WHITE, True, "lm")
+        for index, row in enumerate(rows):
+            ry = table_y + 40 + index * 46
+            draw.rectangle((M, ry, W - M, ry + 46), fill=WHITE)
+            draw.line((M, ry + 46, W - M, ry + 46), fill=LINE)
+            avatar = _circle_image(_open_image(blobs.get(row.image or "")), 30, row.name)
+            canvas.alpha_composite(avatar, (M + 18, ry + 8))
+            text(
+                draw,
+                (M + 58, ry + 23),
+                fit_text(draw, row.name, 14, 220, True),
+                14,
+                INK,
+                True,
+                "lm",
+            )
+            text(draw, (600, ry + 23), f"{row.plays:,}", 13, INK, anchor="lm")
+            text(draw, (720, ry + 23), f"{row.win_rate * 100:.2f}%", 13, INK, anchor="lm")
+            text(draw, (840, ry + 23), f"{row.top3_rate * 100:.2f}%", 13, MUTED, anchor="lm")
+            text(
+                draw,
+                (960, ry + 23),
+                f"#{row.avg_rank:.2f}" if row.plays else "-",
+                13,
+                INK,
+                anchor="lm",
+            )
+            text(draw, (1080, ry + 23), f"{row.avg_damage:,}", 13, MUTED, anchor="lm")
+            gain = f"+{row.mmr_gain}" if row.mmr_gain > 0 else str(row.mmr_gain)
+            text(draw, (1190, ry + 23), gain, 12, GREEN if row.mmr_gain > 0 else RED, True, "lm")
+        draw.rectangle((M, table_y, W - M, table_y + 40 + max(1, len(rows)) * 46), outline=LINE)
+        text(
+            draw,
+            (W - M, height - 22),
+            f"统计更新 {report.updated_at or '未知'} · 数据来源 DAK.GG",
+            11,
+            MUTED,
+            anchor="ra",
+        )
+        return self._save(canvas, "character-view")
+
+    async def skin_view(self, report: SkinViewReport) -> str:
+        header = report.header
+        urls: list[str | None] = [header.banner, header.avatar, header.tier_icon]
+        urls += [row.image for row in report.rows]
+        blobs = await self._blobs(urls)
+        return await asyncio.to_thread(self._draw_skin_view, report, blobs)
+
+    def _draw_skin_view(self, report: SkinViewReport, blobs: dict[str, bytes]) -> str:
+        rows = report.rows[:40]
+        height = 380 + 110 + 20 + 40 + max(1, len(rows)) * 48 + 50
+        canvas = Image.new("RGBA", (W, height), BG)
+        draw = ImageDraw.Draw(canvas)
+        self._draw_profile_chrome(canvas, report.header, blobs, 3)
+        self._draw_summary_bar(canvas, report.header, (M, 380, W - M, 490))
+        table_y = 510
+        headers = [
+            ("皮肤", 68),
+            ("实验体", 600),
+            ("场次", 760),
+            ("胜率", 860),
+            ("TOP3", 970),
+            ("平均排名", 1080),
+            ("伤害", 1190),
+        ]
+        rounded(draw, (M, table_y, W - M, table_y + 40), 4, TABLE_HEAD)
+        for label, x in headers:
+            text(draw, (x, table_y + 20), label, 11, WHITE, True, "lm")
+        for index, row in enumerate(rows):
+            ry = table_y + 40 + index * 48
+            draw.rectangle((M, ry, W - M, ry + 48), fill=WHITE)
+            draw.line((M, ry + 48, W - M, ry + 48), fill=LINE)
+            avatar = _rounded_image(_open_image(blobs.get(row.image or "")), (34, 34), 8)
+            canvas.alpha_composite(avatar, (M + 16, ry + 7))
+            text(
+                draw,
+                (M + 64, ry + 24),
+                fit_text(draw, row.skin, 14, 480, True),
+                14,
+                INK,
+                True,
+                "lm",
+            )
+            text(
+                draw, (600, ry + 24), fit_text(draw, row.character, 13, 150), 13, MUTED, anchor="lm"
+            )
+            text(draw, (760, ry + 24), f"{row.plays:,}", 13, INK, anchor="lm")
+            text(draw, (860, ry + 24), f"{row.win_rate * 100:.2f}%", 13, INK, anchor="lm")
+            text(draw, (970, ry + 24), f"{row.top3_rate * 100:.2f}%", 13, MUTED, anchor="lm")
+            text(
+                draw,
+                (1080, ry + 24),
+                f"#{row.avg_rank:.2f}" if row.plays else "-",
+                13,
+                INK,
+                anchor="lm",
+            )
+            text(draw, (1190, ry + 24), f"{row.avg_damage:,}", 13, MUTED, anchor="lm")
+        draw.rectangle((M, table_y, W - M, table_y + 40 + max(1, len(rows)) * 48), outline=LINE)
+        text(
+            draw,
+            (W - M, height - 22),
+            f"统计更新 {report.updated_at or '未知'} · 数据来源 DAK.GG",
+            11,
+            MUTED,
+            anchor="ra",
+        )
+        return self._save(canvas, "skin-view")
+
+    async def match_history(self, report: MatchHistoryReport) -> str:
+        header = report.header
+        urls: list[str | None] = [header.banner, header.avatar, header.tier_icon]
+        for match in report.matches:
+            urls += [match.character_image, match.weapon_icon, *match.item_icons]
+        blobs = await self._blobs(urls)
+        return await asyncio.to_thread(self._draw_match_history, report, blobs)
+
+    def _draw_match_history(self, report: MatchHistoryReport, blobs: dict[str, bytes]) -> str:
+        rows = report.matches
+        height = 380 + 110 + 20 + 40 + max(1, len(rows)) * 54 + 70
+        canvas = Image.new("RGBA", (W, height), BG)
+        draw = ImageDraw.Draw(canvas)
+        self._draw_profile_chrome(canvas, report.header, blobs, 1)
+        self._draw_summary_bar(canvas, report.header, (M, 380, W - M, 490))
+        text(
+            draw,
+            (W - M, 520),
+            f"第 {report.page} / {report.total_pages} 页 · 共 {report.total_count:,} 场",
+            12,
+            MUTED,
+            anchor="ra",
+        )
+        table_y = 540
+        cols = [
+            ("排名", 24),
+            ("模式", 88),
+            ("时间", 160),
+            ("实验体", 260),
+            ("TK", 520),
+            ("K / D / A", 570),
+            ("伤害", 710),
+            ("RP", 810),
+            ("KDA", 880),
+            ("装备", 950),
+        ]
+        rounded(draw, (M, table_y, W - M, table_y + 40), 4, TABLE_HEAD)
+        for label, x in cols:
+            text(draw, (M + x, table_y + 20), label, 11, WHITE, True, "lm")
+        if not rows:
+            text(draw, (W / 2, table_y + 80), "该页没有对局记录", 14, MUTED, anchor="mm")
+        for index, match in enumerate(rows):
+            ry = table_y + 40 + index * 54
+            draw.rectangle((M, ry, W - M, ry + 54), fill=WHITE)
+            draw.line((M, ry + 54, W - M, ry + 54), fill=LINE)
+            color = _rank_color(match.rank)
+            rank_text = "逃离" if match.rank == 99 else f"#{match.rank}"
+            text(draw, (M + 24, ry + 27), rank_text, 16, color, True, "lm")
+            text(draw, (M + 88, ry + 27), match.mode, 12, MUTED, anchor="lm")
+            text(draw, (M + 160, ry + 27), match.played_at, 11, MUTED, anchor="lm")
+            avatar = _circle_image(
+                _open_image(blobs.get(match.character_image or "")), 30, match.character
+            )
+            canvas.alpha_composite(avatar, (M + 260, ry + 12))
+            text(
+                draw,
+                (M + 298, ry + 27),
+                fit_text(draw, match.character, 13, 100, True),
+                13,
+                INK,
+                True,
+                "lm",
+            )
+            icon_chip(canvas, blobs.get(match.weapon_icon or ""), (M + 410, ry + 16), 24, 5)
+            text(draw, (M + 520, ry + 27), str(match.team_kills), 13, INK, "lm")
+            text(
+                draw,
+                (M + 570, ry + 27),
+                f"{match.kills} / {match.deaths} / {match.assists}",
+                13,
+                INK,
+                "lm",
+            )
+            text(draw, (M + 710, ry + 27), f"{match.damage:,}", 13, INK, "lm")
+            gain_color = GREEN if match.mmr_gain > 0 else (RED if match.mmr_gain < 0 else MUTED)
+            gain = f"+{match.mmr_gain}" if match.mmr_gain > 0 else str(match.mmr_gain)
+            text(draw, (M + 810, ry + 27), gain, 13, gain_color, True, "lm")
+            text(draw, (M + 880, ry + 27), f"{match.kda:.2f}", 13, INK, "lm")
+            for slot, url in enumerate(match.item_icons[:5]):
+                icon = _open_image(blobs.get(url))
+                ix = M + 950 + slot * 19
+                if icon is not None:
+                    canvas.alpha_composite(_rounded_image(icon, (18, 18), 3), (ix, ry + 18))
+        draw.rectangle((M, table_y, W - M, table_y + 40 + max(1, len(rows)) * 54), outline=LINE)
+        text(draw, (W - M, height - 22), "数据来源 DAK.GG", 11, MUTED, anchor="ra")
+        return self._save(canvas, "match-history")
+
     def _draw_summary_bar(self, canvas, report: PlayerReport, box) -> None:
         draw = ImageDraw.Draw(canvas)
         rounded(draw, box, 4, WHITE, LINE)
@@ -594,7 +836,7 @@ class CardRenderer:
         cols = [
             ("排名", 26),
             ("模式", 86),
-            ("角色", 150),
+            ("实验体", 150),
             ("TK", 366),
             ("K / D / A", 424),
             ("伤害", 538),
@@ -713,7 +955,7 @@ class CardRenderer:
         draw = ImageDraw.Draw(canvas)
         rounded(draw, (x, y, x + width, y + 40), 4, TABLE_HEAD)
         draw.rectangle((x, y + 36, x + width, y + 40), fill=TABLE_HEAD)
-        text(draw, (x + 16, y + 20), "常用角色", 13, WHITE, True, "lm")
+        text(draw, (x + 16, y + 20), "常用实验体", 13, WHITE, True, "lm")
         text(draw, (x + 236, y + 20), "胜率", 11, WHITE, anchor="lm")
         text(draw, (x + 310, y + 20), "场次", 11, WHITE, anchor="lm")
         for index, use in enumerate(report.characters[:5]):
