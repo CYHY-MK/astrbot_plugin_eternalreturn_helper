@@ -112,7 +112,7 @@ playwright install chromium
 | `request_timeout` | 20 | 单次请求超时（秒） |
 | `cache_ttl` | 300 | 玩家数据缓存时间（秒）；角色/装备等静态数据缓存 6 小时 |
 | `auto_sync` | 开启 | 查询时后台请求 DAK.GG 同步最新战绩 |
-| `proxy` | 空 | 访问 DAK.GG 较慢时可填 `http://127.0.0.1:7890` 等代理 |
+| `proxy` | 空 | 访问 DAK.GG 较慢时可填 `http://127.0.0.1:7890` 等代理；API 与官网截图共用 |
 | `api_base` | `https://er.dakgg.io/api` | 一般无需修改 |
 | `enable_binding` | 开启 | 是否允许昵称绑定 |
 | `show_rating` | 开启 | 是否显示表现评分 |
@@ -210,6 +210,7 @@ astrbot_plugin_eternalreturn_helper/
     ├── rating.py        # 表现评分算法
     ├── formatters.py    # 文本 / Markdown 渲染
     ├── assets.py        # DAK.GG 图片下载与缓存
-    └── cards.py         # DAK.GG 网页风格卡片渲染
+    ├── cards.py         # DAK.GG 网页风格卡片回退
+    └── webpage.py       # 官网个人页截图（Playwright + Edge/Chrome）
 ```
 
