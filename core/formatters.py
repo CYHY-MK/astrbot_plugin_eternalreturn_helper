@@ -488,7 +488,7 @@ def format_item_markdown(result: ItemQueryResult) -> str:
 # ---------------------------------------------------------------------- 帮助
 
 
-def help_text(prefix: str, *, version: str = "2.2.0") -> str:
+def help_text(prefix: str, *, version: str = "2.2.1") -> str:
     p = prefix or "/"
     return "\n".join(
         [
