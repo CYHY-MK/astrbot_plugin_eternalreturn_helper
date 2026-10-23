@@ -41,8 +41,9 @@ from .core.formatters import (
 )
 from .core.models import RANK_TIER_QUERY, parse_matching_mode_strict
 from .core.queries import EternalReturnService
+from .core.webpage import DakGGWebCapture
 
-PLUGIN_VERSION = "2.1.0"
+PLUGIN_VERSION = "2.2.0"
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
@@ -97,6 +98,8 @@ class EternalReturnHelperPlugin(Star):
         self.service: EternalReturnService | None = None
         self.assets: AssetCache | None = None
         self.renderer: CardRenderer | None = None
+        self._web_capture: DakGGWebCapture | None = None
+        self._web_warned = False
         self._last_query: dict[str, float] = {}
 
     # ------------------------------------------------------------------ 生命周期
@@ -116,10 +119,13 @@ class EternalReturnHelperPlugin(Star):
             await self.client.close()
         if self.assets:
             await self.assets.close()
+        if self._web_capture:
+            await self._web_capture.close()
         self.client = None
         self.service = None
         self.assets = None
         self.renderer = None
+        self._web_capture = None
         logger.info("永恒轮回小助手已卸载。")
 
     # ------------------------------------------------------------------ 配置与工具
@@ -150,6 +156,26 @@ class EternalReturnHelperPlugin(Star):
             )
             self.renderer = CardRenderer(self.assets)
         return self.renderer
+
+    def _ensure_web_capture(self) -> DakGGWebCapture:
+        if self._web_capture is None:
+            self._web_capture = DakGGWebCapture(timeout=int(self._cfg("webpage_timeout", 60) or 60))
+        return self._web_capture
+
+    async def _webpage_path(self, nickname: str, tab: str, matching_mode: int) -> str | None:
+        if not self._cfg("webpage_screenshot", True):
+            return None
+        if str(self._cfg("render_mode", "卡片") or "卡片") == "文本":
+            return None
+        try:
+            return await self._ensure_web_capture().capture(
+                nickname, tab=tab, matching_mode=matching_mode
+            )
+        except Exception as exc:  # noqa: BLE001 - 截图失败回退卡片
+            if not self._web_warned:
+                logger.warning(f"官网截图失败，已回退卡片/文本：{exc}")
+                self._web_warned = True
+            return None
 
     def _prefix(self, event: AstrMessageEvent | None = None) -> str:
         try:
@@ -403,6 +429,12 @@ class EternalReturnHelperPlugin(Star):
             yield event.plain_result(f"查询冷却中，请 {left} 秒后再试。")
             return
 
+        web_mode = parse_matching_mode_strict(mode) if mode else 3
+        web = await self._webpage_path(nickname, "overview", web_mode or 3)
+        if web:
+            yield event.image_result(web)
+            return
+
         service = self._ensure_service()
         try:
             report = await service.player_report(
@@ -525,6 +557,12 @@ class EternalReturnHelperPlugin(Star):
         if left:
             yield event.plain_result(f"查询冷却中，请 {left} 秒后再试。")
             return
+        web_mode = parse_matching_mode_strict(mode) if mode else 3
+        web = await self._webpage_path(nickname, "character", web_mode or 3)
+        if web:
+            yield event.image_result(web)
+            return
+
         service = self._ensure_service()
         try:
             report = await service.character_view(nickname, mode)
@@ -557,6 +595,12 @@ class EternalReturnHelperPlugin(Star):
         if left:
             yield event.plain_result(f"查询冷却中，请 {left} 秒后再试。")
             return
+        web_mode = parse_matching_mode_strict(mode) if mode else 3
+        web = await self._webpage_path(nickname, "skins", web_mode or 3)
+        if web:
+            yield event.image_result(web)
+            return
+
         service = self._ensure_service()
         try:
             report = await service.skin_view(nickname, mode)
@@ -603,6 +647,13 @@ class EternalReturnHelperPlugin(Star):
         if left:
             yield event.plain_result(f"查询冷却中，请 {left} 秒后再试。")
             return
+        if page_number == 1:
+            web_mode = parse_matching_mode_strict(mode) if mode else 3
+            web = await self._webpage_path(nickname, "matches", web_mode or 3)
+            if web:
+                yield event.image_result(web)
+                return
+
         service = self._ensure_service()
         try:
             report = await service.match_history(nickname, mode, page_number)
