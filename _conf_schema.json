@@ -120,5 +120,16 @@
     "type": "bool",
     "default": true,
     "hint": "依据近期表现给出 S/A/B/C 评分与一句评价。"
+  },
+  "webpage_screenshot": {
+    "type": "bool",
+    "default": true,
+    "description": "个人页优先直接截取 DAK.GG 官网（需要 playwright 和本机 Edge/Chrome）",
+    "hint": "开启后 /查询玩家、/查询实验体、/历史对局、/查询皮肤 会优先发送官网截图；失败时自动回退卡片/文本。"
+  },
+  "webpage_timeout": {
+    "type": "int",
+    "default": 60,
+    "description": "官网截图加载超时（秒）"
   }
 }
