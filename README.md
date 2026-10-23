@@ -4,6 +4,8 @@
 
 AstrBot 插件，用于查询《永恒轮回》玩家战绩、实验体、皮肤、历史对局、角色数据、段位分布、分数线与装备。数据来源 [DAK.GG](https://dak.gg/er)。
 
+[下载最新版本 ZIP](https://github.com/CYHY-MK/astrbot_plugin_eternalreturn_helper/releases/latest)
+
 ## 功能
 
 | 指令 | 说明 |
