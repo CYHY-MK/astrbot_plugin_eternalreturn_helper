@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0
+
+- 个人页默认改为**直接截取 DAK.GG 官网**：`/查询玩家`、`/查询实验体`、`/历史对局`、`/查询皮肤` 优先发送官网原版页面截图。
+- 使用 Playwright 驱动本机 Edge/Chrome，等待官网数据加载完成后再截取 `#content-container`，避免截到骨架屏。
+- 自动跟随模式切换官网 `全部 / 排位 / 一般 / 钴协议` 标签。
+- 新增 `webpage_screenshot`（默认开启）与 `webpage_timeout` 配置；截图失败自动回退 Pillow 卡片/文本。
+- 官网历史对局第 1 页使用截图，第 2 页起继续使用卡片分页。
+- 新增官网截图预览；`requirements.txt` 增加 `playwright`。
+- 截图缓存目录为 `astrbot_er_helper_web`，最多保留 40 张。
+
 ## 2.1.0
 
 - 增加纯 AI 制作声明与侵权联系邮箱 `3033980089@qq.com`（README / DISCLAIMER / 帮助 / metadata）。
