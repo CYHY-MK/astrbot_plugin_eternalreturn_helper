@@ -61,12 +61,15 @@ def find_browser() -> str | None:
 class DakGGWebCapture:
     """用 Playwright 驱动系统 Edge/Chrome，截取官网内容容器。"""
 
-    def __init__(self, output_dir: str | None = None, timeout: int = 60) -> None:
+    def __init__(
+        self, output_dir: str | None = None, timeout: int = 60, proxy: str = ""
+    ) -> None:
         self.output_dir = Path(
             output_dir or (Path(tempfile.gettempdir()) / "astrbot_er_helper_web")
         )
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.timeout = max(15, int(timeout or 60))
+        self.proxy = (proxy or "").strip()
         self._playwright = None
         self._browser = None
         self._closed = False
@@ -130,9 +133,17 @@ class DakGGWebCapture:
                     f"https://dak.gg/er/players/{quote(nickname, safe='')}"
                     f"{_TAB_PATHS[tab]}?gameMode={_MODE_QUERY.get(matching_mode, 'RANK')}"
                 )
-                response = await page.goto(
-                    url, wait_until="domcontentloaded", timeout=self.timeout * 1000
-                )
+                response = None
+                for attempt in range(2):
+                    try:
+                        response = await page.goto(
+                            url, wait_until="domcontentloaded", timeout=self.timeout * 1000
+                        )
+                        break
+                    except Exception:  # noqa: BLE001 - 首次连接失败时重试一次
+                        if attempt:
+                            raise
+                        await page.wait_for_timeout(1200)
                 if response is not None and response.status >= 400:
                     raise WebCaptureError(f"官网返回 HTTP {response.status}。")
                 await page.wait_for_selector("#content-container", timeout=self.timeout * 1000)
