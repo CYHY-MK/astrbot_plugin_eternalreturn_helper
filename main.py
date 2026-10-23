@@ -1,4 +1,4 @@
-"""永恒轮回小助手 · AstrBot 插件入口。
+"""永恒轮回小帮手 · AstrBot 插件入口。
 
 数据来自 DAK.GG（https://dak.gg/er）。本项目为纯 AI 制作，仅供学习交流；
 如涉及侵权请联系 QQ 邮箱 3033980089@qq.com。UI 只参考 DAK.GG 官网。
@@ -43,7 +43,7 @@ from .core.models import RANK_TIER_QUERY, parse_matching_mode_strict
 from .core.queries import EternalReturnService
 from .core.webpage import DakGGWebCapture
 
-PLUGIN_VERSION = "2.2.1"
+PLUGIN_VERSION = "2.3.0"
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
@@ -110,7 +110,7 @@ class EternalReturnHelperPlugin(Star):
         self._ensure_renderer()
         if self.assets:
             await self.assets.start()
-        logger.info("永恒轮回小助手已加载，数据来源 DAK.GG。")
+        logger.info("永恒轮回小帮手已加载，数据来源 DAK.GG。")
 
     async def terminate(self) -> None:
         if self.service:
@@ -126,7 +126,7 @@ class EternalReturnHelperPlugin(Star):
         self.assets = None
         self.renderer = None
         self._web_capture = None
-        logger.info("永恒轮回小助手已卸载。")
+        logger.info("永恒轮回小帮手已卸载。")
 
     # ------------------------------------------------------------------ 配置与工具
     def _cfg(self, key: str, default):
