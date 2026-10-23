@@ -1,8 +1,8 @@
 name: astrbot_plugin_eternalreturn_helper
 display_name: 永恒轮回小助手
-desc: 纯 AI 制作的永恒轮回（Eternal Return）查询插件：玩家战绩、角色攻略、角色数据、段位分布、分数线与装备查询，支持 DAK.GG 网页风格的数据卡片。数据来自 DAK.GG；功能设计上参考并致敬 LuoRenMu/EternalReturnLoMu，代码与排版均为独立实现；如涉及侵权请联系 QQ 邮箱 3033980089@qq.com。
-short_desc: 查询永恒轮回玩家战绩、实验体、皮肤、历史对局与段位数据，附 DAK.GG 风格卡片。
-version: 2.1.0
+desc: 纯 AI 制作的永恒轮回（Eternal Return）查询插件：玩家战绩、角色攻略、角色数据、段位分布、分数线与装备查询，支持直接截取 DAK.GG 官网个人页与网页风格卡片。数据来自 DAK.GG；功能设计上参考并致敬 LuoRenMu/EternalReturnLoMu，代码与排版均为独立实现；如涉及侵权请联系 QQ 邮箱 3033980089@qq.com。
+short_desc: 查询永恒轮回玩家战绩、实验体、皮肤、历史对局与段位数据，支持 DAK.GG 官网截图。
+version: 2.2.0
 author: CYHY-MK
 repo: https://github.com/CYHY-MK/astrbot_plugin_eternalreturn_helper
 social_link: https://github.com/CYHY-MK
