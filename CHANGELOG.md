@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.0
+
+- 按 AstrBot 插件平台要求，显示名调整为 **永恒轮回小帮手**。
+- 插件内部 ID 保持 `astrbot_plugin_eternalreturn_helper` 不变，便于已安装用户直接升级。
+- 同步更新帮助标题、卡片页头、README 与 GitHub 仓库描述。
+
 ## 2.2.1
 
 - 按 AstrBot 插件市场审查要求，`core/cards.py` 不再使用 Python 内置 `logging`，统一改为 `from astrbot.api import logger`。
