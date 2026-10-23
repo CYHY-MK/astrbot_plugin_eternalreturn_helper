@@ -13,7 +13,7 @@
 | `/查询玩家 <昵称> [模式] [页面]` | 个人页概览；页面可选 `实验体` / `历史对局` / `皮肤统计`，也可直接用独立指令 |
 | `/查询角色 <角色名> [模式]` | 角色评级、武器流派、技能加点顺序、主流出装、高分玩家 |
 | `/查询实验体 <昵称> [模式]` | 个人页·全部实验体的场次、胜率、TOP3、平均排名、伤害与 RP |
-| `/历史对局 <昵称> [页码] [模式]` | 个人页·历史对局，每页 20 场，可翻页 |
+| `/历史对局 <昵称> [页码] [模式]` | 个人页·历史对局；第 1 页官网截图，第 2 页起卡片分页，每页 20 场 |
 | `/查询皮肤 <昵称> [模式]` | 个人页·皮肤使用次数、胜率、平均排名与伤害 |
 | `/角色数据 [段位]` | 排位模式下全部「角色 × 武器」的评级、胜率、出场与平均伤害 |
 | `/段位统计 [服务器]` | 全服段位人数分布、永恒/半神分数线 |
@@ -45,21 +45,25 @@
 ...
 ```
 
-![玩家战绩预览](docs/preview-player.png)
+默认会**直接截取 DAK.GG 官网个人页**，保留官网的排位卡、模式标签、实验体表、历史对局和皮肤表：
 
-默认「卡片」模式采用 DAK.GG 网页风格：深色页头、白色面板、深色表头、金色强调色、紧凑数据表格，并配合角色立绘、武器/装备图标与段位徽章。
+![官网个人页截图](docs/preview-web-overview.png)
 
-![角色数据预览](docs/preview-character-stats.png)
+![官网实验体页截图](docs/preview-web-character.png)
 
-### 个人页：实验体 / 历史对局 / 皮肤
+![官网历史对局截图](docs/preview-web-history.png)
 
-卡片按 DAK.GG 官网的个人页标签组织为「概览 / 战绩 / 实验体 / 皮肤」，每个页面都有独立的指令与卡片：
+![官网皮肤统计截图](docs/preview-web-skins.png)
 
-![实验体统计预览](docs/preview-character-view.png)
+截图不可用时自动回退到 Pillow 卡片/文本。卡片样式如下：
 
-![历史对局预览](docs/preview-history.png)
+![玩家战绩卡片](docs/preview-player.png)
 
-![皮肤统计预览](docs/preview-skin-view.png)
+![角色数据卡片](docs/preview-character-stats.png)
+
+![实验体卡片](docs/preview-character-view.png)
+
+![皮肤卡片](docs/preview-skin-view.png)
 
 ## 安装
 
@@ -81,7 +85,15 @@ AstrBot/data/plugins/astrbot_plugin_eternalreturn_helper
 
 重启 AstrBot，或在 WebUI 插件页点击刷新。
 
-依赖会自动安装：`aiohttp`、`pypinyin`（拼音搜索）、`Pillow`（卡片绘制，AstrBot 通常已自带）。卡片文字使用系统中文字体（微软雅黑等），Linux 环境建议安装 Noto Sans CJK。
+依赖会自动安装：`aiohttp`、`pypinyin`（拼音搜索）、`Pillow`（卡片回退）、`playwright`（官网截图）。
+
+官网截图使用本机 **Edge / Chrome**，不会额外下载浏览器；Windows 一般已自带 Edge。若系统没有浏览器，可执行：
+
+```bash
+playwright install chromium
+```
+
+也可以通过环境变量 `ER_BROWSER_PATH` 指定浏览器可执行文件。Linux 卡片回退建议安装 Noto Sans CJK 中文字体。
 
 ## 配置
 
@@ -91,7 +103,9 @@ AstrBot/data/plugins/astrbot_plugin_eternalreturn_helper
 | --- | --- | --- |
 | `default_matching_mode` | 排位 | 查询未指定模式时的默认值 |
 | `default_rank_tier` | 灭钻 | 「角色数据」「查询角色」使用的段位口径 |
-| `render_mode` | 卡片 | `卡片` / `文本` / `图片` / `自动`；卡片使用角色立绘、武器与装备图标排版，失败时自动回退 |
+| `webpage_screenshot` | 开启 | 个人页优先直接截取 DAK.GG 官网；需要 `playwright` 与本机 Edge/Chrome |
+| `webpage_timeout` | 60 | 官网截图加载超时（秒） |
+| `render_mode` | 卡片 | 截图失败后的回退方式：`卡片` / `文本` / `图片` / `自动` |
 | `recent_matches` | 6 | 最近对局显示条数（0~10） |
 | `character_rows` | 30 | 角色数据在文字与卡片中显示的行数 |
 | `cooldown_seconds` | 3 | 同一会话查询冷却，防止刷屏与触发上游限流 |
@@ -102,6 +116,17 @@ AstrBot/data/plugins/astrbot_plugin_eternalreturn_helper
 | `api_base` | `https://er.dakgg.io/api` | 一般无需修改 |
 | `enable_binding` | 开启 | 是否允许昵称绑定 |
 | `show_rating` | 开启 | 是否显示表现评分 |
+
+## 官网截图（默认优先）
+
+`/查询玩家`、`/查询实验体`、`/历史对局`、`/查询皮肤` 会优先打开 DAK.GG 官网个人页，等待数据加载完成后截取 `#content-container`，因此看到的就是官网原版 UI：
+
+- 自动按模式参数切换到官网的 `全部 / 排位 / 一般 / 钴协议` 标签；
+- 自动等待角色、对局、皮肤数据加载，避免截到骨架屏；
+- 截图失败时自动回退到 Pillow 卡片，再失败回退文本；
+- 官网 `历史对局` 页面本身只展示最近 20 场并带“查看更多”，所以**第 1 页使用官网截图，第 2 页起使用卡片分页**。
+
+如果不想启动浏览器，可在配置中关闭 `webpage_screenshot`，全部使用卡片/文本。
 
 ## 数据与算法
 
@@ -121,7 +146,7 @@ AstrBot/data/plugins/astrbot_plugin_eternalreturn_helper
 
 本项目是面向 AstrBot 的全新 Python 实现，不是原 Kotlin 项目的官方移植或分支：
 
-- 输出以 Pillow **DAK.GG 官网网页风格卡片**为主（默认）、文字与 Markdown 文转图为辅；排版只参考 DAK.GG 官网，不再参考原项目的卡片布局；
+- 个人页默认直接截取 DAK.GG 官网；其他页面或截图不可用时使用 Pillow 卡片、文字与 Markdown；UI 只参考 DAK.GG 官网，不再参考原项目的卡片布局；
 - 未实现需要大模型分类的 `/兑换码`、`/游戏活动` 新闻链路；
 - 别名系统简化为**个人绑定**（`/绑定昵称`、`/解绑`、`/我的绑定`），没有群级/全局别名；
 - 最近对局按所选模式请求，而原项目固定请求全部模式；
