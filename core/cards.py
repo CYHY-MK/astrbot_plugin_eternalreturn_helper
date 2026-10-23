@@ -407,7 +407,7 @@ class CardRenderer:
         # 顶部导航
         rounded(draw, (M, 16, W - M, nav_bottom), 6, DARK)
         text(draw, (M + 24, 40), "ER", 20, GOLD, True, "lm")
-        text(draw, (M + 58, 40), "永恒轮回小助手", 18, WHITE, True, "lm")
+        text(draw, (M + 58, 40), "永恒轮回小帮手", 18, WHITE, True, "lm")
         for index, label in enumerate(("概览", "战绩", "实验体", "排行")):
             nx = M + 250 + index * 74
             nav_active = active_tab == 0 and index == 0
