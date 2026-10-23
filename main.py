@@ -43,7 +43,7 @@ from .core.models import RANK_TIER_QUERY, parse_matching_mode_strict
 from .core.queries import EternalReturnService
 from .core.webpage import DakGGWebCapture
 
-PLUGIN_VERSION = "2.2.0"
+PLUGIN_VERSION = "2.2.1"
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
