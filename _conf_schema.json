@@ -97,11 +97,17 @@
     "default": true,
     "hint": "查询时在后台请求 DAK.GG 与官方服务器同步玩家数据，不影响本次回复速度。"
   },
+  "use_proxy": {
+    "description": "是否使用代理",
+    "type": "bool",
+    "default": false,
+    "hint": "关闭时忽略下方 proxy 以及系统 HTTP_PROXY/HTTPS_PROXY 环境变量，避免被残留代理污染；需要代理时再打开。"
+  },
   "proxy": {
     "description": "网络代理",
     "type": "string",
     "default": "",
-    "hint": "访问 DAK.GG 较慢时可填写代理地址，例如 http://127.0.0.1:7890，留空则不使用代理。"
+    "hint": "仅在「是否使用代理」开启后生效。例如 http://127.0.0.1:7890；留空表示直连。"
   },
   "api_base": {
     "description": "DAK.GG API 地址",
