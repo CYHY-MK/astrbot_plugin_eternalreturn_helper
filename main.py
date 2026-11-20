@@ -43,7 +43,7 @@ from .core.models import RANK_TIER_QUERY, parse_matching_mode_strict
 from .core.queries import EternalReturnService
 from .core.webpage import DakGGWebCapture
 
-PLUGIN_VERSION = "2.3.1"
+PLUGIN_VERSION = "2.4.0"
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
@@ -451,7 +451,7 @@ class EternalReturnHelperPlugin(Star):
             report = await service.player_report(
                 nickname,
                 mode,
-                recent_limit=int(self._cfg("recent_matches", 6) or 0),
+                recent_limit=int(self._cfg("recent_matches", 20) or 0),
             )
         except Exception as exc:  # noqa: BLE001 - 统一回显
             if not isinstance(exc, DakGGError):
