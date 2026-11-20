@@ -408,7 +408,7 @@ class CardRenderer:
         rounded(draw, (M, 16, W - M, nav_bottom), 6, DARK)
         text(draw, (M + 24, 40), "ER", 20, GOLD, True, "lm")
         text(draw, (M + 58, 40), "永恒轮回小帮手", 18, WHITE, True, "lm")
-        for index, label in enumerate(("概览", "战绩", "实验体", "排行")):
+        for index, label in enumerate(("总览", "历史对局", "实验体", "排行")):
             nx = M + 250 + index * 74
             nav_active = active_tab == 0 and index == 0
             color = WHITE if nav_active else (155, 158, 168)
@@ -503,7 +503,7 @@ class CardRenderer:
         # 标签栏
         rounded(draw, (M, 312, W - M, tab_bottom), 0, WHITE)
         draw.line((M, tab_bottom, W - M, tab_bottom), fill=LINE, width=1)
-        tabs = ["概览", "战绩", "实验体", "皮肤"]
+        tabs = ["总览", "历史对局", "实验体", "皮肤统计"]
         for index, label in enumerate(tabs):
             tx = M + 26 + index * 86
             active = index == active_tab
@@ -522,60 +522,39 @@ class CardRenderer:
             )
 
     def _draw_player(self, report: PlayerReport, blobs: dict[str, bytes]) -> str:
-        body_top = 380
-        left_x, left_w = M, 850
-        right_x, right_w = 890, W - M - 890
-        match_rows = len(report.matches)
-        if match_rows:
-            match_h = 40 + match_rows * 56
-        elif report.recent_hidden:
-            match_h = 84
-        else:
-            match_h = 0
-        char_h = 40 + max(1, min(5, len(report.characters))) * 46
-        duo_h = (40 + min(3, len(report.duo)) * 46) if report.duo else 0
-        right_h = 300 + 20 + char_h + (20 + duo_h if duo_h else 0)
-        left_h = 110 + 12 + match_h + 20 + 220
-        height = body_top + max(left_h, right_h) + 50
+        body_top = 400
+        x = M
+        width = W - M * 2
+        rank_h = 300
+        chart_h = 190
+        chars = report.characters[:8]
+        char_h = 48 + len(chars) * 52 if chars else 0
+        duo = report.duo[:4]
+        duo_h = 48 + len(duo) * 52 if duo else 0
+        match_rows = min(20, len(report.matches))
+        match_h = 196 + 40 + max(1, match_rows) * 58 + 20
+        total = rank_h + 16 + chart_h + 16 + char_h
+        if duo_h:
+            total += 16 + duo_h
+        total += 16 + match_h
+        height = body_top + total + 50
         canvas = Image.new("RGBA", (W, height), BG)
         draw = ImageDraw.Draw(canvas)
 
         self._draw_profile_chrome(canvas, report, blobs, 0)
 
-        # 左侧概要条
-        self._draw_summary_bar(canvas, report, (left_x, body_top, left_x + left_w, body_top + 110))
-        if report.matches:
-            self._draw_matches_table(canvas, report, (left_x, body_top + 122), blobs)
-        elif report.recent_hidden:
-            hidden_box = (left_x, body_top + 122, left_x + left_w, body_top + 122 + 84)
-            rounded(draw, hidden_box, 4, WHITE, LINE)
-            text(
-                draw,
-                (hidden_box[0] + 18, hidden_box[1] + 42),
-                "最近对局展示已关闭（可在插件配置中调整 recent_matches）",
-                12,
-                MUTED,
-                anchor="lm",
-            )
-        self._draw_mmr_panel(
-            canvas,
-            report,
-            (
-                left_x,
-                body_top + 122 + match_h + 20,
-                left_x + left_w,
-                body_top + 122 + match_h + 240,
-            ),
-        )
-        # 右侧
-        self._draw_season_panel(
-            canvas, report, (right_x, body_top, right_x + right_w, body_top + 300)
-        )
-        cy = body_top + 320
-        self._draw_char_table(canvas, report, (right_x, cy), char_h, blobs)
-        cy += char_h + 20
-        if report.duo:
-            self._draw_duo_table(canvas, report, (right_x, cy), duo_h, blobs)
+        y = body_top
+        self._draw_official_rank(canvas, report, (x, y, x + width, y + rank_h), blobs)
+        y += rank_h + 16
+        self._draw_mmr_panel(canvas, report, (x, y, x + width, y + chart_h))
+        y += chart_h + 16
+        if chars:
+            self._draw_official_experiments(canvas, report, (x, y, x + width, y + char_h), blobs)
+            y += char_h + 16
+        if duo_h:
+            self._draw_official_duo(canvas, report, (x, y, x + width, y + duo_h), blobs)
+            y += duo_h + 16
+        self._draw_official_matches(canvas, report, (x, y, x + width, y + match_h), blobs)
 
         text(
             draw,
@@ -586,6 +565,265 @@ class CardRenderer:
             anchor="ra",
         )
         return self._save(canvas, "player")
+
+    def _draw_official_rank(self, canvas, report: PlayerReport, box, blobs) -> None:
+        x1, y1, x2, y2 = box
+        draw = ImageDraw.Draw(canvas)
+        rounded(draw, box, 4, WHITE, LINE)
+        text(
+            draw,
+            (x1 + 18, y1 + 20),
+            "排位" if report.mode_id == 3 else report.mode_name,
+            16,
+            INK,
+            True,
+        )
+        draw.line((x1, y1 + 42, x2, y1 + 42), fill=LINE, width=1)
+        rank_x2 = x1 + 300
+        draw.line((rank_x2, y1 + 42, rank_x2, y2), fill=LINE, width=1)
+        icon = _open_image(blobs.get(report.tier_icon or ""))
+        if report.mode_id == 3:
+            tier_img = (
+                _rounded_image(icon, (64, 64), 8)
+                if icon is not None
+                else _circle_image(None, 64, report.tier)
+            )
+            canvas.alpha_composite(tier_img, (x1 + 118, y1 + 58))
+            text(draw, (x1 + 150, y1 + 140), f"{report.mmr:,} RP", 24, GOLD, True, "mm")
+            tier_grade = f" {report.tier_grade}" if report.tier_grade else ""
+            text(
+                draw,
+                (x1 + 150, y1 + 168),
+                f"{report.tier}{tier_grade} - {report.tier_mmr:,} RP",
+                12,
+                MUTED,
+                anchor="ma",
+            )
+            global_text = f"全球第 {report.rank_global:,} 名" if report.rank_global else "全球 - 名"
+            local_text = f"本服第 {report.rank_local:,} 名" if report.rank_local else "本服 - 名"
+            text(draw, (x1 + 150, y1 + 196), global_text, 12, MUTED, anchor="ma")
+            text(draw, (x1 + 150, y1 + 216), local_text, 12, MUTED, anchor="ma")
+        else:
+            text(draw, (x1 + 150, y1 + 150), "-", 28, MUTED, True, "mm")
+            text(draw, (x1 + 150, y1 + 190), report.mode_name, 13, MUTED, anchor="ma")
+
+        stats = report.stats
+        items = [
+            ("平均TK", f"{stats.get('avg_team_kills', 0):.2f}"),
+            ("胜率", f"{stats.get('win_rate', 0) * 100:.2f}%"),
+            ("游戏场次", f"{stats.get('play', 0):,}"),
+            ("平均击杀", f"{stats.get('avg_kills', 0):.2f}"),
+            ("TOP 2", f"{stats.get('top2_rate', 0) * 100:.1f}%"),
+            ("平均伤害", f"{stats.get('avg_damage', 0):,}"),
+            ("平均助攻", f"{stats.get('avg_assists', 0):.1f}"),
+            ("TOP 3", f"{stats.get('top3_rate', 0) * 100:.1f}%"),
+            ("平均排名", f"#{stats.get('avg_rank', 0):.1f}" if stats.get("play") else "-"),
+            ("平均狩猎野生动物", f"{stats.get('avg_monster', 0):.1f}"),
+            ("获得平均学分", f"{stats.get('avg_credit', 0):,.0f}"),
+            ("平均视野贡献", f"{stats.get('avg_vision', 0):.2f}"),
+        ]
+        grid_x = rank_x2 + 12
+        grid_w = x2 - grid_x - 16
+        cell_w = grid_w / 5
+        row_h = (y2 - y1 - 54) / 3
+        for index, (label, value) in enumerate(items):
+            col = index % 5
+            row = index // 5
+            cx = grid_x + col * cell_w + 10
+            cy = y1 + 54 + row * row_h
+            text(draw, (cx, cy + 12), label, 10, MUTED)
+            text(
+                draw,
+                (cx, cy + 36),
+                fit_text(draw, value, 18, int(cell_w - 18), True),
+                18,
+                INK,
+                True,
+            )
+            if col:
+                draw.line((cx - 10, cy + 10, cx - 10, cy + row_h - 8), fill=(245, 245, 245))
+
+    def _draw_official_experiments(self, canvas, report: PlayerReport, box, blobs) -> None:
+        x1, y1, x2, y2 = box
+        draw = ImageDraw.Draw(canvas)
+        rounded(draw, box, 4, WHITE, LINE)
+        rounded(draw, (x1, y1, x2, y1 + 48), 4, TABLE_HEAD)
+        text(draw, (x1 + 18, y1 + 24), f"{report.mode_name} 实验体统计", 14, WHITE, True, "lm")
+        for label, offset in (
+            ("实验体", 60),
+            ("胜率", 760),
+            ("RP", 880),
+            ("平均击杀", 1000),
+            ("平均伤害", 1160),
+        ):
+            text(draw, (x1 + offset, y1 + 24), label, 10, (220, 221, 226), anchor="lm")
+        for index, row in enumerate(report.characters[:8]):
+            ry = y1 + 48 + index * 52
+            draw.rectangle((x1, ry, x2, ry + 52), fill=WHITE)
+            draw.line((x1, ry + 52, x2, ry + 52), fill=LINE)
+            avatar = _circle_image(_open_image(blobs.get(row.image or "")), 32, row.name)
+            canvas.alpha_composite(avatar, (x1 + 18, ry + 10))
+            text(draw, (x1 + 60, ry + 17), fit_text(draw, row.name, 13, 260, True), 13, INK, True)
+            text(draw, (x1 + 60, ry + 36), f"{row.plays} 游戏", 10, MUTED)
+            text(draw, (x1 + 760, ry + 26), f"{row.win_rate * 100:.1f}%", 13, INK, anchor="lm")
+            gain = f"+{row.mmr_gain}" if row.mmr_gain > 0 else str(row.mmr_gain)
+            text(
+                draw, (x1 + 880, ry + 26), gain, 12, GREEN if row.mmr_gain > 0 else RED, True, "lm"
+            )
+            text(draw, (x1 + 1000, ry + 26), f"{row.avg_kills:.2f}", 12, INK, anchor="lm")
+            text(draw, (x1 + 1160, ry + 26), f"{row.avg_damage:,}", 13, INK, anchor="lm")
+
+    def _draw_official_duo(self, canvas, report: PlayerReport, box, blobs) -> None:
+        x1, y1, x2, y2 = box
+        draw = ImageDraw.Draw(canvas)
+        rounded(draw, box, 4, WHITE, LINE)
+        rounded(draw, (x1, y1, x2, y1 + 48), 4, TABLE_HEAD)
+        text(draw, (x1 + 18, y1 + 24), "一起游戏的玩家（最近20场对局）", 14, WHITE, True, "lm")
+        text(draw, (x1 + 1000, y1 + 24), "胜率", 10, (220, 221, 226), anchor="lm")
+        text(draw, (x1 + 1130, y1 + 24), "平均排名", 10, (220, 221, 226), anchor="lm")
+        for index, mate in enumerate(report.duo[:4]):
+            ry = y1 + 48 + index * 52
+            draw.rectangle((x1, ry, x2, ry + 52), fill=WHITE)
+            draw.line((x1, ry + 52, x2, ry + 52), fill=LINE)
+            avatar = _circle_image(_open_image(blobs.get(mate.image or "")), 34, mate.name)
+            canvas.alpha_composite(avatar, (x1 + 18, ry + 9))
+            text(draw, (x1 + 64, ry + 17), fit_text(draw, mate.name, 13, 400, True), 13, INK, True)
+            text(draw, (x1 + 64, ry + 36), f"{mate.plays} 游戏", 10, MUTED)
+            text(
+                draw,
+                (x1 + 1000, ry + 26),
+                f"{mate.win_rate * 100:.1f}%" if mate.plays else "-",
+                13,
+                INK,
+                anchor="lm",
+            )
+            text(draw, (x1 + 1130, ry + 26), f"#{mate.avg_rank:.1f}", 13, MUTED, anchor="lm")
+
+    def _draw_official_matches(self, canvas, report: PlayerReport, box, blobs) -> None:
+        x1, y1, x2, y2 = box
+        draw = ImageDraw.Draw(canvas)
+        rounded(draw, box, 4, WHITE, LINE)
+        modes = ["全部", "排位", "孤狼", "一般", "钴协议", "联盟"]
+        active_label = {"匹配": "一般"}.get(report.mode_name, report.mode_name)
+        for index, label in enumerate(modes):
+            mx = x1 + 24 + index * 96
+            selected = label == active_label
+            if selected:
+                rounded(draw, (mx - 10, y1 + 12, mx + 72, y1 + 48), 4, GOLD)
+            text(draw, (mx, y1 + 30), label, 13, WHITE if selected else MUTED, selected, "lm")
+        draw.line((x1, y1 + 58, x2, y1 + 58), fill=LINE)
+        matches = report.matches[:20]
+        avg_rank = (
+            sum((m.rank if m.rank != 99 else 8) for m in matches) / max(1, len(matches))
+            if matches
+            else 0
+        )
+        wins = sum(1 for m in matches if m.rank == 1)
+        top3 = sum(1 for m in matches if 1 <= m.rank <= 3)
+        avg_tk = sum(m.team_kills for m in matches) / max(1, len(matches)) if matches else 0
+        text(draw, (x1 + 24, y1 + 82), f"最近20场对局 ({report.mode_name})", 13, INK, True)
+        rounded(draw, (x2 - 160, y1 + 68, x2 - 24, y1 + 104), 4, WHITE, LINE)
+        text(draw, (x2 - 92, y1 + 86), "全部", 11, MUTED, anchor="mm")
+        metrics = [
+            ("平均排名", f"#{avg_rank:.1f}" if matches else "-"),
+            ("胜利次数", str(wins) if matches else "-"),
+            ("TOP 3", str(top3) if matches else "-"),
+            ("平均TK", f"{avg_tk:.2f}" if matches else "-"),
+        ]
+        for index, (label, value) in enumerate(metrics):
+            mx = x1 + 360 + index * 180
+            text(draw, (mx, y1 + 78), label, 10, MUTED, anchor="ma")
+            text(draw, (mx, y1 + 104), value, 20, INK, True, "ma")
+        for index in range(20):
+            cx = x1 + 28 + index * 35
+            cy = y1 + 126
+            match = matches[index] if index < len(matches) else None
+            if match is None:
+                rounded(draw, (cx, cy, cx + 30, cy + 32), 3, (235, 235, 238))
+                text(draw, (cx + 15, cy + 16), "-", 10, MUTED, anchor="mm")
+                continue
+            color = _rank_color(match.rank)
+            rounded(draw, (cx, cy, cx + 30, cy + 32), 3, (238, 238, 241))
+            text(
+                draw,
+                (cx + 15, cy + 16),
+                "逃" if match.rank == 99 else str(match.rank),
+                11,
+                color,
+                True,
+                "mm",
+            )
+        header_y = y1 + 196
+        rounded(draw, (x1, header_y, x2, header_y + 40), 4, TABLE_HEAD)
+        cols = [
+            ("排名", 26),
+            ("时间", 92),
+            ("实验体", 170),
+            ("武器", 360),
+            ("TK", 430),
+            ("K / D / A", 480),
+            ("伤害", 620),
+            ("RP", 720),
+            ("装备", 820),
+        ]
+        for label, offset in cols:
+            text(draw, (x1 + offset, header_y + 20), label, 10, WHITE, True, "lm")
+        if not matches:
+            message = (
+                "最近对局展示已关闭（可在插件配置中调整 recent_matches）"
+                if report.recent_hidden
+                else "暂无对局记录"
+            )
+            text(draw, (x1 + 24, header_y + 66), message, 12, MUTED)
+            return
+        for index, match in enumerate(matches):
+            ry = header_y + 40 + index * 58
+            draw.rectangle((x1, ry, x2, ry + 58), fill=WHITE)
+            draw.line((x1, ry + 58, x2, ry + 58), fill=LINE)
+            rank_text = "逃离" if match.rank == 99 else f"#{match.rank}"
+            text(draw, (x1 + 26, ry + 29), rank_text, 16, _rank_color(match.rank), True, "lm")
+            text(draw, (x1 + 92, ry + 29), match.played_at, 10, MUTED, anchor="lm")
+            avatar = _circle_image(
+                _open_image(blobs.get(match.character_image or "")), 32, match.character
+            )
+            canvas.alpha_composite(avatar, (x1 + 170, ry + 13))
+            text(
+                draw,
+                (x1 + 208, ry + 29),
+                fit_text(draw, match.character, 12, 120, True),
+                12,
+                INK,
+                True,
+                "lm",
+            )
+            icon_chip(canvas, blobs.get(match.weapon_icon or ""), (x1 + 360, ry + 17), 24, 5)
+            text(draw, (x1 + 430, ry + 29), str(match.team_kills), 12, INK, "lm")
+            text(
+                draw,
+                (x1 + 480, ry + 29),
+                f"{match.kills} / {match.deaths} / {match.assists}",
+                12,
+                INK,
+                "lm",
+            )
+            text(draw, (x1 + 620, ry + 29), f"{match.damage:,}", 12, INK, "lm")
+            gain = f"+{match.mmr_gain}" if match.mmr_gain > 0 else str(match.mmr_gain)
+            text(
+                draw,
+                (x1 + 720, ry + 29),
+                gain,
+                12,
+                GREEN if match.mmr_gain > 0 else RED,
+                True,
+                "lm",
+            )
+            for slot, url in enumerate(match.item_icons[:5]):
+                icon = _open_image(blobs.get(url))
+                if icon is not None:
+                    canvas.alpha_composite(
+                        _rounded_image(icon, (20, 20), 3), (x1 + 820 + slot * 22, ry + 19)
+                    )
+        draw.rectangle((x1, header_y, x2, header_y + 40 + len(matches) * 58), outline=LINE)
 
     # ------------------------------------------------------------------ 个人页：实验体/皮肤/历史
     async def character_view(self, report: CharacterViewReport) -> str:
