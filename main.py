@@ -43,7 +43,7 @@ from .core.models import RANK_TIER_QUERY, parse_matching_mode_strict
 from .core.queries import EternalReturnService
 from .core.webpage import DakGGWebCapture
 
-PLUGIN_VERSION = "2.3.0"
+PLUGIN_VERSION = "2.3.1"
 
 _CJK_RANGES = (
     (0x4E00, 0x9FFF),
@@ -136,13 +136,21 @@ class EternalReturnHelperPlugin(Star):
             return default
         return default if value is None else value
 
+    def _effective_proxy(self) -> str:
+        enabled = self._cfg("use_proxy", False)
+        if isinstance(enabled, str):
+            enabled = enabled.strip().lower() in ("1", "true", "yes", "on")
+        if not enabled:
+            return ""
+        return str(self._cfg("proxy", "") or "").strip()
+
     def _ensure_service(self) -> EternalReturnService:
         if self.service is None:
             self.client = DakGGClient(
                 api_base=str(self._cfg("api_base", "https://er.dakgg.io/api")).strip()
                 or "https://er.dakgg.io/api",
                 timeout=float(self._cfg("request_timeout", 20) or 20),
-                proxy=str(self._cfg("proxy", "") or ""),
+                proxy=self._effective_proxy(),
                 cache_ttl=int(self._cfg("cache_ttl", 300) or 0),
             )
             self.service = EternalReturnService(self.client, dict(self.config or {}))
@@ -152,14 +160,17 @@ class EternalReturnHelperPlugin(Star):
         if self.renderer is None:
             self.assets = AssetCache(
                 timeout=float(self._cfg("request_timeout", 20) or 20),
-                proxy=str(self._cfg("proxy", "") or ""),
+                proxy=self._effective_proxy(),
             )
             self.renderer = CardRenderer(self.assets)
         return self.renderer
 
     def _ensure_web_capture(self) -> DakGGWebCapture:
         if self._web_capture is None:
-            self._web_capture = DakGGWebCapture(timeout=int(self._cfg("webpage_timeout", 60) or 60))
+            self._web_capture = DakGGWebCapture(
+                timeout=int(self._cfg("webpage_timeout", 60) or 60),
+                proxy=self._effective_proxy(),
+            )
         return self._web_capture
 
     async def _webpage_path(self, nickname: str, tab: str, matching_mode: int) -> str | None:
