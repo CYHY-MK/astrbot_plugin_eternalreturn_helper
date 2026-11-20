@@ -41,10 +41,10 @@
   "recent_matches": {
     "description": "最近对局显示条数",
     "type": "int",
-    "default": 6,
+    "default": 20,
     "slider": {
       "min": 0,
-      "max": 10,
+      "max": 20,
       "step": 1
     }
   },
