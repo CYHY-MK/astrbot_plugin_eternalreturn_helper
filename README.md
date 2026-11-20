@@ -55,7 +55,7 @@ AstrBot 插件，用于查询《永恒轮回》玩家战绩、实验体、皮肤
 
 ![官网皮肤统计截图](docs/preview-web-skins.png)
 
-截图不可用时自动回退到 Pillow 卡片/文本。卡片样式如下：
+截图不可用时自动回退到 Pillow 卡片/文本。卡片模式按官网从上到下排列：排位与统计、MMR 走势、排位实验体统计、一起游戏的玩家、最近 20 场对局。
 
 ![玩家战绩卡片](docs/preview-player.png)
 
@@ -106,7 +106,7 @@ playwright install chromium
 | `webpage_screenshot` | 开启 | 个人页优先直接截取 DAK.GG 官网；需要 `playwright` 与本机 Edge/Chrome |
 | `webpage_timeout` | 60 | 官网截图加载超时（秒） |
 | `render_mode` | 卡片 | 截图失败后的回退方式：`卡片` / `文本` / `图片` / `自动` |
-| `recent_matches` | 6 | 最近对局显示条数（0~10） |
+| `recent_matches` | 20 | 最近对局显示条数（0~20） |
 | `character_rows` | 30 | 角色数据在文字与卡片中显示的行数 |
 | `cooldown_seconds` | 3 | 同一会话查询冷却，防止刷屏与触发上游限流 |
 | `request_timeout` | 20 | 单次请求超时（秒） |
