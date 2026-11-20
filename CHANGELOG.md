@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.1
+
+- 新增 `use_proxy` 配置项，默认关闭。
+- 关闭时忽略插件 `proxy` 配置与系统 `HTTP_PROXY` / `HTTPS_PROXY` 环境变量，避免残留代理污染。
+- API、图片下载和 Playwright 官网截图统一受 `use_proxy` 控制；关闭时浏览器显式使用 `--no-proxy-server`。
+- 需要代理时先在 WebUI 打开 `use_proxy`，再填写代理地址。
+
 ## 2.3.0
 
 - 按 AstrBot 插件平台要求，显示名调整为 **永恒轮回小帮手**。
