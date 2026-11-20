@@ -45,6 +45,7 @@ class AssetCache:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
+                trust_env=False,
                 headers={"User-Agent": USER_AGENT},
             )
 
