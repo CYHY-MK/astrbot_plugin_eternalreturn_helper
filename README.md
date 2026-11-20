@@ -112,7 +112,8 @@ playwright install chromium
 | `request_timeout` | 20 | 单次请求超时（秒） |
 | `cache_ttl` | 300 | 玩家数据缓存时间（秒）；角色/装备等静态数据缓存 6 小时 |
 | `auto_sync` | 开启 | 查询时后台请求 DAK.GG 同步最新战绩 |
-| `proxy` | 空 | 访问 DAK.GG 较慢时可填 `http://127.0.0.1:7890` 等代理；API 与官网截图共用 |
+| `use_proxy` | 关闭 | 是否启用代理；关闭时忽略 `proxy` 和系统 `HTTP_PROXY` / `HTTPS_PROXY`，避免残留代理污染 |
+| `proxy` | 空 | 仅在 `use_proxy` 开启后生效，例如 `http://127.0.0.1:7890`；API 与官网截图共用 |
 | `api_base` | `https://er.dakgg.io/api` | 一般无需修改 |
 | `enable_binding` | 开启 | 是否允许昵称绑定 |
 | `show_rating` | 开启 | 是否显示表现评分 |
@@ -145,7 +146,7 @@ playwright install chromium
 ## 常见问题
 
 **查询超时 / 连接失败**
-DAK.GG 在部分网络环境下访问较慢，可在插件配置中填写 `proxy`，或调大 `request_timeout`。
+DAK.GG 在部分网络环境下访问较慢，可先打开 `use_proxy` 再填写 `proxy`，或调大 `request_timeout`。
 
 **提示「请求过于频繁」**
 插件已对静态数据做 6 小时缓存、玩家数据做 5 分钟缓存，并带请求重试。仍被限流时请调大 `cooldown_seconds`。
