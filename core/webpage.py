@@ -61,9 +61,7 @@ def find_browser() -> str | None:
 class DakGGWebCapture:
     """用 Playwright 驱动系统 Edge/Chrome，截取官网内容容器。"""
 
-    def __init__(
-        self, output_dir: str | None = None, timeout: int = 60, proxy: str = ""
-    ) -> None:
+    def __init__(self, output_dir: str | None = None, timeout: int = 60, proxy: str = "") -> None:
         self.output_dir = Path(
             output_dir or (Path(tempfile.gettempdir()) / "astrbot_er_helper_web")
         )
@@ -93,17 +91,21 @@ class DakGGWebCapture:
         if self._playwright is None:
             self._playwright = await async_playwright().start()
         executable = find_browser()
+        args = ["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"]
+        if not self.proxy:
+            # 明确直连，避免系统/浏览器残留代理污染
+            args.append("--no-proxy-server")
         try:
             if executable:
                 self._browser = await self._playwright.chromium.launch(
                     executable_path=executable,
                     headless=True,
-                    args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+                    args=args,
                 )
             else:
                 self._browser = await self._playwright.chromium.launch(
                     headless=True,
-                    args=["--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"],
+                    args=args,
                 )
         except Exception as exc:  # noqa: BLE001
             raise WebCaptureError(
