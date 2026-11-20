@@ -79,6 +79,7 @@ class DakGGClient:
             self._closed = False
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout),
+                trust_env=False,
                 headers={
                     "User-Agent": USER_AGENT,
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
