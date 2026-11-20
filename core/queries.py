@@ -118,6 +118,7 @@ class CharacterUse:
     avg_rank: float
     avg_damage: int
     mmr_gain: int
+    avg_kills: float = 0.0
     image: str = ""
 
 
@@ -607,6 +608,7 @@ class EternalReturnService:
                     avg_rank=div(stat.get("place"), play, 8.0),
                     avg_damage=int(div(stat.get("damageToPlayer"), play)),
                     mmr_gain=as_int(stat.get("mmrGain")),
+                    avg_kills=div(stat.get("playerKill"), play),
                     image=_normalize_url(str(char.get("imageUrl") or "")),
                 )
             )
